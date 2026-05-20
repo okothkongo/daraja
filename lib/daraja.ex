@@ -1,6 +1,6 @@
-defmodule Mpesa do
+defmodule Daraja do
   @moduledoc """
-  Documentation for `Mpesa`.
+  Documentation for `Daraja`.
   """
 
   @doc """
@@ -8,7 +8,7 @@ defmodule Mpesa do
 
   ## Examples
 
-      iex> Mpesa.hello()
+      iex> Daraja.hello()
       :world
 
   """
