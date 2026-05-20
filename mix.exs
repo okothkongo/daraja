@@ -14,6 +14,7 @@ defmodule Daraja.MixProject do
       description: description(),
       package: package(),
       docs: docs(),
+      aliases: aliases(),
       preferred_cli_env: [docs: :docs]
     ]
   end
@@ -59,6 +60,16 @@ defmodule Daraja.MixProject do
       canonical: "http://hexdocs.pm/daraja",
       source_url: @source_url,
       extras: ["README.md", "CHANGELOG.md", "LICENSE"]
+    ]
+  end
+
+  defp aliases do
+    [
+      lint: [
+        "compile --warnings-as-errors --force",
+        "format --check-formatted",
+        "deps.unlock --unused"
+      ]
     ]
   end
 end
