@@ -1,0 +1,59 @@
+name: Elixir CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  mix_test:
+    name: mix test (Elixir ${{ matrix.elixir }} | OTP ${{ matrix.otp }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - elixir: 1.18.x
+            otp: 27
+          - elixir: 1.19.x
+            otp: 28
+    env:
+      MIX_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ matrix.otp }}
+          elixir-version: ${{ matrix.elixir }}
+      - name: Cache build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ matrix.otp }}-${{ matrix.elixir }}-build
+      - run: mix deps.get --only test
+      - run: mix lint
+      - run: mix test
+
+  dialyzer:
+    name: mix dialyzer
+    runs-on: ubuntu-24.04
+    env:
+      MIX_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: 28
+          elixir-version: 1.19.x
+      - name: Cache build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: 28-1.19.x-dialyzer
+      - run: mix deps.get --only test
+      - run: mix dialyzer --halt-exit-status
