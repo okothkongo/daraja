@@ -28,7 +28,8 @@ defmodule Daraja.MixProject do
   defp deps do
     [
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
-      {:ex_doc, "~> 0.40.2", only: :dev}
+      {:ex_doc, "~> 0.40.2", only: :dev},
+      {:finch, "~> 0.22.0", optional: true}
     ]
   end
 

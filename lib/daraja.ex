@@ -3,16 +3,8 @@ defmodule Daraja do
   Documentation for `Daraja`.
   """
 
-  @doc """
-  Hello world.
-
-  ## Examples
-
-      iex> Daraja.hello()
-      :world
-
-  """
-  def hello do
-    :world
+  @doc false
+  def http_client do
+    Application.get_env(:daraja, :http_client, Daraja.HTTPClient.Finch)
   end
 end
