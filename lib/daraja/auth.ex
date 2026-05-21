@@ -3,8 +3,8 @@ defmodule Daraja.Auth do
   Handles OAuth 2.0 authentication with the Daraja API.
 
   The access token is automatically cached and reused until it nears expiry,
-  at which point a new one is fetched transparently. Caching is managed by
-  `Daraja.Auth.Cache`, which runs as a supervised `GenServer`.
+  at which point a new one is fetched transparently. Caching is managed
+  internally by a supervised `GenServer`.
 
   Before making any Daraja API call, an access token must be obtained via
   `fetch_token/0`.
