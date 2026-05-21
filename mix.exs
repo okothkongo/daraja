@@ -9,6 +9,7 @@ defmodule Daraja.MixProject do
       version: @version,
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
+      elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
       dialyzer: dialyzer(),
       description: description(),
@@ -21,20 +22,24 @@ defmodule Daraja.MixProject do
 
   # Run "mix help compile.app" to learn about applications.
   def application do
-    []
+    [mod: {Daraja.Application, []}]
   end
 
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
-      {:ex_doc, "~> 0.40.2", only: :dev}
+      {:ex_doc, "~> 0.40.2", only: :dev},
+      {:finch, "~> 0.22.0", optional: true}
     ]
   end
 
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
+
   defp dialyzer do
     [
-      plt_add_apps: []
+      plt_add_apps: [:json]
     ]
   end
 
@@ -59,7 +64,7 @@ defmodule Daraja.MixProject do
       source_ref: "v#{@version}",
       canonical: "http://hexdocs.pm/daraja",
       source_url: @source_url,
-      extras: ["README.md", "CHANGELOG.md", "LICENSE"]
+      extras: ["README.md", "LICENSE"]
     ]
   end
 
