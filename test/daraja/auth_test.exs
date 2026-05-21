@@ -4,6 +4,9 @@ defmodule Daraja.AuthTest do
   alias Daraja.HTTPClient.Mock
 
   setup do
+    Daraja.Auth.reset_token()
+    Mock.reset()
+
     Application.put_env(:daraja, :http_client, Mock)
     Application.put_env(:daraja, :consumer_key, "test_key")
     Application.put_env(:daraja, :consumer_secret, "test_secret")
