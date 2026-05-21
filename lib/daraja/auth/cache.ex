@@ -27,14 +27,7 @@ defmodule Daraja.Auth.Cache do
     if token_valid?(state) do
       {:reply, {:ok, state.token}, state}
     else
-      case do_fetch_token() do
-        {:ok, token} ->
-          expires_at = System.monotonic_time(:second) + @token_ttl
-          {:reply, {:ok, token}, %{token: token, expires_at: expires_at}}
-
-        error ->
-          {:reply, error, state}
-      end
+      refresh_token(state)
     end
   end
 
@@ -42,10 +35,21 @@ defmodule Daraja.Auth.Cache do
     {:reply, :ok, %{token: nil, expires_at: 0}}
   end
 
+  defp refresh_token(state) do
+    case fetch_new_token() do
+      {:ok, token} ->
+        expires_at = System.monotonic_time(:second) + @token_ttl
+        {:reply, {:ok, token}, %{token: token, expires_at: expires_at}}
+
+      error ->
+        {:reply, error, state}
+    end
+  end
+
   defp token_valid?(%{token: nil}), do: false
   defp token_valid?(%{expires_at: expires_at}), do: System.monotonic_time(:second) < expires_at
 
-  defp do_fetch_token do
+  defp fetch_new_token do
     url = Daraja.Config.base_url() <> @auth_url
 
     credentials =

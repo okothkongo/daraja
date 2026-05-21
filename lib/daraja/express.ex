@@ -61,20 +61,18 @@ defmodule Daraja.Express do
 
   defp make_request(url, headers, body) do
     case Daraja.http_client().request(:post, url, headers, body) do
-      {:ok, _status, _headers, response_body} ->
-        case JSON.decode(response_body) do
-          {:ok, map} ->
-            case Response.from_map(map) do
-              %Response.Success{} = success -> {:ok, success}
-              %Response.Error{} = error -> {:error, :request_failed, error}
-            end
-
-          {:error, _} ->
-            {:error, :request_failed, response_body}
-        end
-
-      {:error, reason} ->
-        {:error, :http_error, reason}
+      {:ok, _status, _headers, response_body} -> parse_response(response_body)
+      {:error, reason} -> {:error, :http_error, reason}
     end
   end
+
+  defp parse_response(body) do
+    case JSON.decode(body) do
+      {:ok, map} -> map |> Response.from_map() |> wrap_response()
+      {:error, _} -> {:error, :request_failed, body}
+    end
+  end
+
+  defp wrap_response(%Response.Success{} = success), do: {:ok, success}
+  defp wrap_response(%Response.Error{} = error), do: {:error, :request_failed, error}
 end
