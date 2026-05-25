@@ -12,6 +12,27 @@ defmodule Daraja do
         account_reference: "Order-001"
       })
 
+  ## Customer to Business (C2B)
+
+  Register callback URLs for payment notifications:
+
+      Daraja.register_url(%{
+        short_code: "600984",
+        response_type: "Completed",
+        confirmation_url: "https://example.com/c2b/confirmation",
+        validation_url: "https://example.com/c2b/validation"
+      })
+
+  Simulate a payment in the sandbox environment:
+
+      Daraja.simulate(%{
+        short_code: "600984",
+        command_id: "CustomerPayBillOnline",
+        amount: 100,
+        msisdn: "254708374149",
+        bill_ref_number: "INV-001"
+      })
+
   Configure credentials in your application config:
 
       config :daraja,
@@ -41,4 +62,19 @@ defmodule Daraja do
   Optional params: `transaction_desc`, `transaction_type`.
   """
   defdelegate stk_push(params), to: Daraja.Express
+
+  @doc """
+  Registers C2B callback URLs for payment notifications.
+
+  Required params: `short_code`, `response_type`, `confirmation_url`, `validation_url`.
+  """
+  defdelegate register_url(params), to: Daraja.C2B
+
+  @doc """
+  Simulates a C2B payment transaction. Sandbox only.
+
+  Required params: `short_code`, `command_id`, `amount`, `msisdn`.
+  Optional params: `bill_ref_number`.
+  """
+  defdelegate simulate(params), to: Daraja.C2B
 end
