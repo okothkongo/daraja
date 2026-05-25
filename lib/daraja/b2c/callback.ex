@@ -1,0 +1,103 @@
+defmodule Daraja.B2C.Callback do
+  @moduledoc """
+  Helpers for parsing asynchronous B2C callback payloads posted to `ResultURL`.
+
+  B2C transactions are asynchronous; this module parses successful and unsuccessful
+  callback payloads into typed structs and provides helpers to extract
+  `ResultParameters` values by key.
+  """
+
+  defmodule Result do
+    @moduledoc "Parsed B2C callback result payload."
+
+    @type result_parameter :: %{key: String.t(), value: term()}
+    @type reference_item :: %{key: String.t(), value: term()} | nil
+
+    @type t :: %__MODULE__{
+            result_type: integer() | nil,
+            result_code: String.t() | integer() | nil,
+            result_desc: String.t() | nil,
+            originator_conversation_id: String.t() | nil,
+            conversation_id: String.t() | nil,
+            transaction_id: String.t() | nil,
+            result_parameters: [result_parameter()],
+            result_parameters_map: %{optional(String.t()) => term()},
+            reference_item: reference_item()
+          }
+
+    defstruct [
+      :result_type,
+      :result_code,
+      :result_desc,
+      :originator_conversation_id,
+      :conversation_id,
+      :transaction_id,
+      result_parameters: [],
+      result_parameters_map: %{},
+      reference_item: nil
+    ]
+  end
+
+  @doc """
+  Parses a B2C callback payload map into a `%Result{}` struct.
+  """
+  @spec from_map(map()) :: Result.t()
+  def from_map(%{"Result" => result_map}) when is_map(result_map) do
+    parameters = extract_result_parameters(result_map)
+    reference_item = extract_reference_item(result_map)
+
+    %Result{
+      result_type: result_map["ResultType"],
+      result_code: result_map["ResultCode"],
+      result_desc: result_map["ResultDesc"],
+      originator_conversation_id: result_map["OriginatorConversationID"],
+      conversation_id: result_map["ConversationID"],
+      transaction_id: result_map["TransactionID"],
+      result_parameters: parameters,
+      result_parameters_map: result_parameters_map(parameters),
+      reference_item: reference_item
+    }
+  end
+
+  def from_map(_), do: %Result{}
+
+  @doc """
+  Flattens `ResultParameters.ResultParameter` into `%{"Key" => value}`.
+  """
+  @spec result_parameters_map([map()] | map() | nil) :: %{optional(String.t()) => term()}
+  def result_parameters_map(nil), do: %{}
+
+  def result_parameters_map(%{"Result" => result_map}) when is_map(result_map) do
+    result_map
+    |> extract_result_parameters()
+    |> result_parameters_map()
+  end
+
+  def result_parameters_map(parameters) when is_list(parameters) do
+    parameters
+    |> Enum.reduce(%{}, fn
+      %{key: key, value: value}, acc when is_binary(key) -> Map.put(acc, key, value)
+      %{"Key" => key, "Value" => value}, acc when is_binary(key) -> Map.put(acc, key, value)
+      _, acc -> acc
+    end)
+  end
+
+  defp extract_result_parameters(result_map) do
+    result_map
+    |> get_in(["ResultParameters", "ResultParameter"])
+    |> normalize_result_parameter_list()
+    |> Enum.map(fn %{"Key" => key, "Value" => value} -> %{key: key, value: value} end)
+  end
+
+  defp normalize_result_parameter_list(nil), do: []
+  defp normalize_result_parameter_list(list) when is_list(list), do: list
+  defp normalize_result_parameter_list(map) when is_map(map), do: [map]
+  defp normalize_result_parameter_list(_), do: []
+
+  defp extract_reference_item(result_map) do
+    case get_in(result_map, ["ReferenceData", "ReferenceItem"]) do
+      %{"Key" => key, "Value" => value} -> %{key: key, value: value}
+      _ -> nil
+    end
+  end
+end
