@@ -30,7 +30,7 @@ defmodule Daraja.MixProject do
     [
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40.2", only: :dev},
-      {:finch, "~> 0.22.0", optional: true}
+      {:finch, "~> 0.18", optional: true}
     ]
   end
 
