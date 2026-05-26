@@ -111,4 +111,58 @@ defmodule Daraja.B2CTest do
       assert msg =~ "BusinessPayment"
     end
   end
+
+  describe "payment/2 env fallbacks" do
+    @env_fields_to_keys %{
+      initiator_name: :b2c_initiator_name,
+      security_credential: :b2c_security_credential,
+      queue_timeout_url: :b2c_queue_timeout_url,
+      result_url: :b2c_result_url
+    }
+
+    setup do
+      Application.put_env(:daraja, :b2c_initiator_name, "env-initiator")
+      Application.put_env(:daraja, :b2c_security_credential, "env-credential")
+      Application.put_env(:daraja, :b2c_queue_timeout_url, "https://env.example.com/b2c/timeout")
+      Application.put_env(:daraja, :b2c_result_url, "https://env.example.com/b2c/result")
+
+      on_exit(fn ->
+        Enum.each(Map.values(@env_fields_to_keys), &Application.delete_env(:daraja, &1))
+      end)
+
+      :ok
+    end
+
+    test "uses env values when params omit the fields", %{client: client} do
+      Mock.push_response({:ok, 200, [], @auth_success})
+      Mock.push_response({:ok, 200, [], @payment_success})
+
+      params = Map.drop(@valid_params, Map.keys(@env_fields_to_keys))
+
+      assert {:ok, %Response.Success{}} = Daraja.B2C.payment(client, params)
+    end
+
+    test "uses env values when params set the fields to nil", %{client: client} do
+      Mock.push_response({:ok, 200, [], @auth_success})
+      Mock.push_response({:ok, 200, [], @payment_success})
+
+      params =
+        Enum.reduce(Map.keys(@env_fields_to_keys), @valid_params, fn field, acc ->
+          Map.put(acc, field, nil)
+        end)
+
+      assert {:ok, %Response.Success{}} = Daraja.B2C.payment(client, params)
+    end
+
+    test "still returns invalid_request when neither params nor env set the fields", %{
+      client: client
+    } do
+      Enum.each(Map.values(@env_fields_to_keys), &Application.delete_env(:daraja, &1))
+
+      params = Map.drop(@valid_params, Map.keys(@env_fields_to_keys))
+
+      assert {:error, :invalid_request, missing} = Daraja.B2C.payment(client, params)
+      assert Enum.all?(Map.keys(@env_fields_to_keys), &(&1 in missing))
+    end
+  end
 end

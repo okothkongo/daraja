@@ -103,7 +103,20 @@ defmodule Daraja do
         business_short_code: "174379",
         passkey: "bfb279...",
         callback_url: "https://example.com/callback",
-        environment: :sandbox
+        environment: :sandbox,
+        b2b_initiator: "testapi",
+        b2b_security_credential: "base64-credential",
+        b2b_queue_timeout_url: "https://example.com/b2b/timeout",
+        b2b_result_url: "https://example.com/b2b/result",
+        b2c_initiator_name: "testapi",
+        b2c_security_credential: "base64-credential",
+        b2c_queue_timeout_url: "https://example.com/b2c/timeout",
+        b2c_result_url: "https://example.com/b2c/result"
+
+  The `b2b_*` and `b2c_*` keys are optional defaults for `Daraja.B2B.request/2`
+  and `Daraja.B2C.payment/2`. Per-call params always take precedence over env
+  values, which is handy for multi-tenant callers that need to override
+  defaults per request.
 
   Per-call overrides for multi-tenant callers:
 

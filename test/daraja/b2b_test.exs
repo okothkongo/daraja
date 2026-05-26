@@ -164,6 +164,60 @@ defmodule Daraja.B2BTest do
     end
   end
 
+  describe "request/2 env fallbacks" do
+    @env_fields_to_keys %{
+      initiator: :b2b_initiator,
+      security_credential: :b2b_security_credential,
+      queue_timeout_url: :b2b_queue_timeout_url,
+      result_url: :b2b_result_url
+    }
+
+    setup do
+      Application.put_env(:daraja, :b2b_initiator, "env-initiator")
+      Application.put_env(:daraja, :b2b_security_credential, "env-credential")
+      Application.put_env(:daraja, :b2b_queue_timeout_url, "https://env.example.com/b2b/timeout")
+      Application.put_env(:daraja, :b2b_result_url, "https://env.example.com/b2b/result")
+
+      on_exit(fn ->
+        Enum.each(Map.values(@env_fields_to_keys), &Application.delete_env(:daraja, &1))
+      end)
+
+      :ok
+    end
+
+    test "uses env values when params omit the fields", %{client: client} do
+      Mock.push_response({:ok, 200, [], @auth_success})
+      Mock.push_response({:ok, 200, [], @payment_success})
+
+      params = Map.drop(@valid_params, Map.keys(@env_fields_to_keys))
+
+      assert {:ok, %Response.Success{}} = Daraja.B2B.request(client, params)
+    end
+
+    test "uses env values when params set the fields to nil", %{client: client} do
+      Mock.push_response({:ok, 200, [], @auth_success})
+      Mock.push_response({:ok, 200, [], @payment_success})
+
+      params =
+        Enum.reduce(Map.keys(@env_fields_to_keys), @valid_params, fn field, acc ->
+          Map.put(acc, field, nil)
+        end)
+
+      assert {:ok, %Response.Success{}} = Daraja.B2B.request(client, params)
+    end
+
+    test "still returns invalid_request when neither params nor env set the fields", %{
+      client: client
+    } do
+      Enum.each(Map.values(@env_fields_to_keys), &Application.delete_env(:daraja, &1))
+
+      params = Map.drop(@valid_params, Map.keys(@env_fields_to_keys))
+
+      assert {:error, :invalid_request, missing} = Daraja.B2B.request(client, params)
+      assert Enum.all?(Map.keys(@env_fields_to_keys), &(&1 in missing))
+    end
+  end
+
   describe "Callback" do
     test "parses a successful callback payload" do
       result = Callback.from_map(@successful_callback_payload)
