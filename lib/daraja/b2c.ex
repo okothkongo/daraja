@@ -1,0 +1,112 @@
+defmodule Daraja.B2C do
+  @moduledoc """
+  Business to Customer (B2C) payments.
+
+  Initiate disbursement from an M-PESA organization shortcode to a customer MSISDN.
+
+  ## Example
+
+      Daraja.b2c_payment(%{
+        originator_conversation_id: "my-unique-id-001",
+        initiator_name: "testapi",
+        security_credential: "base64-credential",
+        command_id: "BusinessPayment",
+        amount: 10,
+        party_a: "600997",
+        party_b: "254705912645",
+        remarks: "Payment for promotion",
+        queue_timeout_url: "https://example.com/b2c/timeout",
+        result_url: "https://example.com/b2c/result",
+        occasion: "PromoPayout"
+      })
+  """
+
+  alias Daraja.B2C.{PaymentRequest, Response}
+
+  @payment_request_path "/mpesa/b2c/v3/paymentrequest"
+
+  @type result ::
+          {:ok, Response.Success.t()}
+          | {:error, :invalid_request, list()}
+          | {:error, :auth_failed, term()}
+          | {:error, :http_error, term()}
+          | {:error, :request_failed, Response.Error.t() | binary()}
+
+  @doc """
+  Sends a B2C payment request.
+
+  Required params:
+  - `originator_conversation_id`
+  - `initiator_name`
+  - `security_credential`
+  - `command_id`
+  - `amount`
+  - `party_a`
+  - `party_b`
+  - `remarks`
+  - `queue_timeout_url`
+  - `result_url`
+
+  Optional params:
+  - `occasion`
+  """
+  @spec payment(map() | PaymentRequest.t()) :: result()
+  def payment(%PaymentRequest{} = request), do: do_payment(request)
+
+  def payment(params) when is_map(params) do
+    case PaymentRequest.new(params) do
+      {:ok, request} -> do_payment(request)
+      error -> error
+    end
+  end
+
+  defp do_payment(%PaymentRequest{} = request) do
+    with {:ok, token} <- Daraja.Auth.fetch_token() do
+      body =
+        %{
+          "OriginatorConversationID" => request.originator_conversation_id,
+          "InitiatorName" => request.initiator_name,
+          "SecurityCredential" => request.security_credential,
+          "CommandID" => request.command_id,
+          "Amount" => request.amount,
+          "PartyA" => request.party_a,
+          "PartyB" => request.party_b,
+          "Remarks" => request.remarks,
+          "QueueTimeOutURL" => request.queue_timeout_url,
+          "ResultURL" => request.result_url,
+          "Occasion" => request.occasion
+        }
+        |> maybe_drop_nil_occasion()
+        |> JSON.encode!()
+
+      url = Daraja.Config.base_url() <> @payment_request_path
+      headers = [{"Authorization", "Bearer " <> token}, {"Content-Type", "application/json"}]
+      make_request(url, headers, body)
+    end
+  end
+
+  defp make_request(url, headers, body) do
+    case Daraja.http_client().request(:post, url, headers, body) do
+      {:ok, _status, _headers, response_body} -> parse_response(response_body)
+      {:error, reason} -> {:error, :http_error, reason}
+    end
+  end
+
+  defp parse_response(body) do
+    case JSON.decode(body) do
+      {:ok, map} -> map |> Response.from_map() |> wrap_response()
+      {:error, _} -> {:error, :request_failed, body}
+    end
+  end
+
+  defp wrap_response(%Response.Success{} = success), do: {:ok, success}
+  defp wrap_response(%Response.Error{} = error), do: {:error, :request_failed, error}
+
+  defp maybe_drop_nil_occasion(payload) do
+    if is_nil(payload["Occasion"]) do
+      Map.delete(payload, "Occasion")
+    else
+      payload
+    end
+  end
+end
