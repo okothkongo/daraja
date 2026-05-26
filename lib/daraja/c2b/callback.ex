@@ -120,7 +120,14 @@ defmodule Daraja.C2B.Callback do
     ]
   end
 
-  @valid_reject_codes ~w[C2B00011 C2B00012 C2B00013 C2B00014 C2B00015 C2B00016]
+  @reject_descriptions %{
+    "C2B00011" => "Invalid MSISDN",
+    "C2B00012" => "Invalid Account Number",
+    "C2B00013" => "Invalid Amount",
+    "C2B00014" => "Invalid KYC Details",
+    "C2B00015" => "Invalid Short Code",
+    "C2B00016" => "Other Error"
+  }
 
   @doc """
   Parses a raw callback map into a `Validation` or `Confirmation` struct.
@@ -153,18 +160,18 @@ defmodule Daraja.C2B.Callback do
   Builds the JSON response body to reject a validation request.
 
   `result_code` must be one of: `"C2B00011"`, `"C2B00012"`, `"C2B00013"`,
-  `"C2B00014"`, `"C2B00015"`, `"C2B00016"`. Defaults to `"C2B00016"` if an
-  unrecognised code is supplied.
+  `"C2B00014"`, `"C2B00015"`, `"C2B00016"`. Defaults to `"C2B00016"` ("Other
+  Error") if an unrecognised code is supplied.
 
       Daraja.C2B.Callback.reject("C2B00012")
-      #=> %{"ResultCode" => "C2B00012", "ResultDesc" => "Rejected"}
+      #=> %{"ResultCode" => "C2B00012", "ResultDesc" => "Invalid Account Number"}
   """
   @spec reject(String.t()) :: %{String.t() => String.t()}
-  def reject(result_code) when result_code in @valid_reject_codes do
-    %{"ResultCode" => result_code, "ResultDesc" => "Rejected"}
+  def reject(result_code) when is_map_key(@reject_descriptions, result_code) do
+    %{"ResultCode" => result_code, "ResultDesc" => Map.fetch!(@reject_descriptions, result_code)}
   end
 
-  def reject(_), do: %{"ResultCode" => "C2B00016", "ResultDesc" => "Rejected"}
+  def reject(_), do: %{"ResultCode" => "C2B00016", "ResultDesc" => "Other Error"}
 
   defp build_fields(map) do
     [

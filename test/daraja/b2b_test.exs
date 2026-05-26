@@ -255,5 +255,9 @@ defmodule Daraja.B2BTest do
                "TransactionReceipt" => "SG632NMUAB"
              }
     end
+
+    test "accept/0 returns the success acknowledgement map" do
+      assert %{"ResultCode" => 0, "ResultDesc" => "Success"} = Callback.accept()
+    end
   end
 end

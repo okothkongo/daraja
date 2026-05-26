@@ -62,6 +62,18 @@ defmodule Daraja.B2C.Callback do
   def from_map(_), do: %Result{}
 
   @doc """
+  Builds the JSON response body used to acknowledge a B2C result callback.
+
+  B2C callbacks are one-way notifications; M-PESA only needs the merchant to
+  acknowledge receipt with `ResultCode: 0`.
+
+      Daraja.B2C.Callback.accept()
+      #=> %{"ResultCode" => 0, "ResultDesc" => "Success"}
+  """
+  @spec accept() :: %{String.t() => String.t() | non_neg_integer()}
+  def accept, do: %{"ResultCode" => 0, "ResultDesc" => "Success"}
+
+  @doc """
   Flattens `ResultParameters.ResultParameter` into `%{"Key" => value}`.
   """
   @spec result_parameters_map([map()] | map() | nil) :: %{optional(String.t()) => term()}

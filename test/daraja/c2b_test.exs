@@ -279,19 +279,28 @@ defmodule Daraja.C2BTest do
   end
 
   describe "Callback.reject/1" do
-    test "returns rejected map with valid result code" do
-      assert %{"ResultCode" => "C2B00012", "ResultDesc" => "Rejected"} =
+    @reject_descriptions %{
+      "C2B00011" => "Invalid MSISDN",
+      "C2B00012" => "Invalid Account Number",
+      "C2B00013" => "Invalid Amount",
+      "C2B00014" => "Invalid KYC Details",
+      "C2B00015" => "Invalid Short Code",
+      "C2B00016" => "Other Error"
+    }
+
+    test "returns the matching description for a valid result code" do
+      assert %{"ResultCode" => "C2B00012", "ResultDesc" => "Invalid Account Number"} =
                Callback.reject("C2B00012")
     end
 
-    test "falls back to C2B00016 for unknown result codes" do
-      assert %{"ResultCode" => "C2B00016", "ResultDesc" => "Rejected"} =
+    test "falls back to C2B00016 / Other Error for unknown codes" do
+      assert %{"ResultCode" => "C2B00016", "ResultDesc" => "Other Error"} =
                Callback.reject("UNKNOWN")
     end
 
-    test "supports all defined result codes" do
-      for code <- ~w[C2B00011 C2B00012 C2B00013 C2B00014 C2B00015 C2B00016] do
-        assert %{"ResultCode" => ^code} = Callback.reject(code)
+    test "supports all defined result codes with the correct description" do
+      for {code, desc} <- @reject_descriptions do
+        assert %{"ResultCode" => ^code, "ResultDesc" => ^desc} = Callback.reject(code)
       end
     end
   end
