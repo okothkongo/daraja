@@ -6,7 +6,9 @@ defmodule Daraja.C2B do
 
   Register your confirmation and (optional) validation callback URLs:
 
-      Daraja.register_url(%{
+      client = Daraja.Client.new()
+
+      Daraja.C2B.register_url(client, %{
         short_code: "600984",
         response_type: "Completed",
         confirmation_url: "https://example.com/c2b/confirmation",
@@ -21,7 +23,7 @@ defmodule Daraja.C2B do
 
   Simulate a C2B payment in the sandbox environment:
 
-      Daraja.simulate(%{
+      Daraja.C2B.simulate(client, %{
         short_code: "600984",
         command_id: "CustomerPayBillOnline",
         amount: 100,
@@ -35,7 +37,8 @@ defmodule Daraja.C2B do
   See `Daraja.C2B.Callback` for details.
   """
 
-  alias Daraja.C2B.{RegisterUrlRequest, SimulateRequest, Response}
+  alias Daraja.Client
+  alias Daraja.C2B.{RegisterUrlRequest, Response, SimulateRequest}
 
   @register_url_path "/mpesa/c2b/v2/registerurl"
   @simulate_path "/mpesa/c2b/v2/simulate"
@@ -57,12 +60,14 @@ defmodule Daraja.C2B do
   Note: In production this is a one-time registration. To change URLs, delete
   them via the M-PESA Org portal and re-register.
   """
-  @spec register_url(map() | RegisterUrlRequest.t()) :: result()
-  def register_url(%RegisterUrlRequest{} = request), do: do_register_url(request)
+  @spec register_url(Client.t(), map() | RegisterUrlRequest.t()) :: result()
+  def register_url(%Client{} = client, %RegisterUrlRequest{} = request) do
+    do_register_url(client, request)
+  end
 
-  def register_url(params) when is_map(params) do
+  def register_url(%Client{} = client, params) when is_map(params) do
     case RegisterUrlRequest.new(params) do
-      {:ok, request} -> do_register_url(request)
+      {:ok, request} -> do_register_url(client, request)
       error -> error
     end
   end
@@ -75,18 +80,20 @@ defmodule Daraja.C2B do
 
   `command_id` must be `"CustomerPayBillOnline"` or `"CustomerBuyGoodsOnline"`.
   """
-  @spec simulate(map() | SimulateRequest.t()) :: result()
-  def simulate(%SimulateRequest{} = request), do: do_simulate(request)
+  @spec simulate(Client.t(), map() | SimulateRequest.t()) :: result()
+  def simulate(%Client{} = client, %SimulateRequest{} = request) do
+    do_simulate(client, request)
+  end
 
-  def simulate(params) when is_map(params) do
+  def simulate(%Client{} = client, params) when is_map(params) do
     case SimulateRequest.new(params) do
-      {:ok, request} -> do_simulate(request)
+      {:ok, request} -> do_simulate(client, request)
       error -> error
     end
   end
 
-  defp do_register_url(%RegisterUrlRequest{} = request) do
-    with {:ok, token} <- Daraja.Auth.fetch_token() do
+  defp do_register_url(%Client{} = client, %RegisterUrlRequest{} = request) do
+    with {:ok, token} <- Daraja.Auth.fetch_token(client) do
       body =
         %{
           "ShortCode" => request.short_code,
@@ -96,14 +103,14 @@ defmodule Daraja.C2B do
         }
         |> JSON.encode!()
 
-      url = Daraja.Config.base_url() <> @register_url_path
+      url = Client.base_url(client) <> @register_url_path
       headers = [{"Authorization", "Bearer " <> token}, {"Content-Type", "application/json"}]
       make_request(url, headers, body)
     end
   end
 
-  defp do_simulate(%SimulateRequest{} = request) do
-    with {:ok, token} <- Daraja.Auth.fetch_token() do
+  defp do_simulate(%Client{} = client, %SimulateRequest{} = request) do
+    with {:ok, token} <- Daraja.Auth.fetch_token(client) do
       body =
         %{
           "ShortCode" => request.short_code,
@@ -114,7 +121,7 @@ defmodule Daraja.C2B do
         }
         |> JSON.encode!()
 
-      url = Daraja.Config.base_url() <> @simulate_path
+      url = Client.base_url(client) <> @simulate_path
       headers = [{"Authorization", "Bearer " <> token}, {"Content-Type", "application/json"}]
       make_request(url, headers, body)
     end

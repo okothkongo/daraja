@@ -4,38 +4,58 @@ defmodule Daraja.Express do
 
   ## Example
 
-      Daraja.stk_push(%{
+      client = Daraja.Client.new()
+
+      Daraja.Express.request(client, %{
         amount: 100,
         phone_number: "254712345678",
         account_reference: "Order-001",
         transaction_desc: "Payment"
       })
+
+  The client must carry `business_short_code`, `passkey`, and `callback_url`
+  (either via options to `Daraja.Client.new/1` or via the `:daraja` application
+  environment). Calls return `{:error, :invalid_client, missing}` when any of
+  those fields is missing.
   """
 
+  alias Daraja.Client
   alias Daraja.Express.{Request, Response}
 
   @stk_push_path "/mpesa/stkpush/v1/processrequest"
 
-  @spec stk_push(map() | Request.t()) ::
+  @stk_client_fields [:business_short_code, :passkey, :callback_url]
+
+  @type result ::
           {:ok, Response.Success.t()}
           | {:error, :invalid_request, [atom()]}
+          | {:error, :invalid_client, [atom()]}
           | {:error, :auth_failed, term()}
           | {:error, :http_error, term()}
-          | {:error, :request_failed, Response.Error.t()}
-  def stk_push(%Request{} = request), do: do_stk_push(request)
+          | {:error, :request_failed, Response.Error.t() | binary()}
 
-  def stk_push(params) when is_map(params) do
+  @doc """
+  Sends an STK Push (M-Pesa Express) request.
+
+  Required params: `amount`, `phone_number`, `account_reference`.
+  Optional params: `transaction_desc`, `transaction_type`.
+  """
+  @spec request(Client.t(), map() | Request.t()) :: result()
+  def request(%Client{} = client, %Request{} = request), do: do_request(client, request)
+
+  def request(%Client{} = client, params) when is_map(params) do
     case Request.new(params) do
-      {:ok, request} -> do_stk_push(request)
+      {:ok, request} -> do_request(client, request)
       error -> error
     end
   end
 
-  defp do_stk_push(%Request{} = request) do
-    with {:ok, token} <- Daraja.Auth.fetch_token() do
+  defp do_request(%Client{} = client, %Request{} = request) do
+    with :ok <- validate_client(client),
+         {:ok, token} <- Daraja.Auth.fetch_token(client) do
       timestamp = NaiveDateTime.utc_now() |> Calendar.strftime("%Y%m%d%H%M%S")
-      short_code = Daraja.Config.business_short_code()
-      password = Base.encode64(short_code <> Daraja.Config.passkey() <> timestamp)
+      short_code = client.business_short_code
+      password = Base.encode64(short_code <> client.passkey <> timestamp)
 
       body =
         %{
@@ -47,15 +67,25 @@ defmodule Daraja.Express do
           "PartyA" => request.phone_number,
           "PartyB" => short_code,
           "PhoneNumber" => request.phone_number,
-          "CallBackURL" => Daraja.Config.callback_url(),
+          "CallBackURL" => client.callback_url,
           "AccountReference" => request.account_reference,
           "TransactionDesc" => request.transaction_desc || ""
         }
         |> JSON.encode!()
 
-      url = Daraja.Config.base_url() <> @stk_push_path
+      url = Client.base_url(client) <> @stk_push_path
       headers = [{"Authorization", "Bearer " <> token}, {"Content-Type", "application/json"}]
       make_request(url, headers, body)
+    end
+  end
+
+  defp validate_client(%Client{} = client) do
+    missing = Enum.filter(@stk_client_fields, fn key -> is_nil(Map.fetch!(client, key)) end)
+
+    if missing == [] do
+      :ok
+    else
+      {:error, :invalid_client, missing}
     end
   end
 

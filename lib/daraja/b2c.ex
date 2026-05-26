@@ -6,7 +6,9 @@ defmodule Daraja.B2C do
 
   ## Example
 
-      Daraja.b2c_payment(%{
+      client = Daraja.Client.new()
+
+      Daraja.B2C.payment(client, %{
         originator_conversation_id: "my-unique-id-001",
         initiator_name: "testapi",
         security_credential: "base64-credential",
@@ -21,6 +23,7 @@ defmodule Daraja.B2C do
       })
   """
 
+  alias Daraja.Client
   alias Daraja.B2C.{PaymentRequest, Response}
 
   @payment_request_path "/mpesa/b2c/v3/paymentrequest"
@@ -50,18 +53,18 @@ defmodule Daraja.B2C do
   Optional params:
   - `occasion`
   """
-  @spec payment(map() | PaymentRequest.t()) :: result()
-  def payment(%PaymentRequest{} = request), do: do_payment(request)
+  @spec payment(Client.t(), map() | PaymentRequest.t()) :: result()
+  def payment(%Client{} = client, %PaymentRequest{} = request), do: do_payment(client, request)
 
-  def payment(params) when is_map(params) do
+  def payment(%Client{} = client, params) when is_map(params) do
     case PaymentRequest.new(params) do
-      {:ok, request} -> do_payment(request)
+      {:ok, request} -> do_payment(client, request)
       error -> error
     end
   end
 
-  defp do_payment(%PaymentRequest{} = request) do
-    with {:ok, token} <- Daraja.Auth.fetch_token() do
+  defp do_payment(%Client{} = client, %PaymentRequest{} = request) do
+    with {:ok, token} <- Daraja.Auth.fetch_token(client) do
       body =
         %{
           "OriginatorConversationID" => request.originator_conversation_id,
@@ -79,7 +82,7 @@ defmodule Daraja.B2C do
         |> maybe_drop_nil_occasion()
         |> JSON.encode!()
 
-      url = Daraja.Config.base_url() <> @payment_request_path
+      url = Client.base_url(client) <> @payment_request_path
       headers = [{"Authorization", "Bearer " <> token}, {"Content-Type", "application/json"}]
       make_request(url, headers, body)
     end

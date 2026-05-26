@@ -1,8 +1,9 @@
 defmodule Daraja.C2BTest do
   use ExUnit.Case, async: false
 
+  alias Daraja.C2B.{Callback, Response}
+  alias Daraja.Client
   alias Daraja.HTTPClient.Mock
-  alias Daraja.C2B.{Response, Callback}
 
   @auth_success ~s({"access_token":"tok123","expires_in":"3600"})
 
@@ -40,128 +41,135 @@ defmodule Daraja.C2BTest do
   }
 
   setup do
-    Daraja.Auth.reset_token()
     Mock.reset()
 
     Application.put_env(:daraja, :http_client, Mock)
-    Application.put_env(:daraja, :consumer_key, "test_key")
-    Application.put_env(:daraja, :consumer_secret, "test_secret")
-    Application.put_env(:daraja, :business_short_code, "600984")
-
-    Application.put_env(
-      :daraja,
-      :passkey,
-      "bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919"
-    )
-
-    Application.put_env(:daraja, :callback_url, "https://example.com/callback")
-    Application.put_env(:daraja, :environment, :sandbox)
 
     on_exit(fn ->
-      Enum.each(
-        ~w[http_client consumer_key consumer_secret business_short_code passkey callback_url environment]a,
-        &Application.delete_env(:daraja, &1)
-      )
+      Application.delete_env(:daraja, :http_client)
     end)
+
+    client =
+      Client.new(
+        consumer_key: "test_key",
+        consumer_secret: "test_secret",
+        environment: :sandbox
+      )
+
+    {:ok, client: client}
   end
 
   # ---------------------------------------------------------------------------
-  # register_url/1
+  # register_url/2
   # ---------------------------------------------------------------------------
 
-  describe "register_url/1 with valid params" do
-    test "returns Success struct on happy path" do
+  describe "register_url/2 with valid params" do
+    test "returns Success struct on happy path", %{client: client} do
       Mock.push_response({:ok, 200, [], @auth_success})
       Mock.push_response({:ok, 200, [], @register_success})
 
-      assert {:ok, %Response.Success{} = result} = Daraja.register_url(@valid_register_params)
+      assert {:ok, %Response.Success{} = result} =
+               Daraja.C2B.register_url(client, @valid_register_params)
+
       assert result.response_code == "0"
       assert result.response_description == "Success"
       assert result.originator_conversation_id == "6e86-45dd-91ac-fd5d4178ab523408729"
     end
 
-    test "accepts string-keyed params" do
+    test "accepts string-keyed params", %{client: client} do
       Mock.push_response({:ok, 200, [], @auth_success})
       Mock.push_response({:ok, 200, [], @register_success})
 
       string_params = Map.new(@valid_register_params, fn {k, v} -> {Atom.to_string(k), v} end)
-      assert {:ok, %Response.Success{}} = Daraja.register_url(string_params)
+      assert {:ok, %Response.Success{}} = Daraja.C2B.register_url(client, string_params)
     end
 
-    test "accepts Cancelled as response_type" do
+    test "accepts Cancelled as response_type", %{client: client} do
       Mock.push_response({:ok, 200, [], @auth_success})
       Mock.push_response({:ok, 200, [], @register_success})
 
       assert {:ok, %Response.Success{}} =
-               Daraja.register_url(%{@valid_register_params | response_type: "Cancelled"})
+               Daraja.C2B.register_url(client, %{
+                 @valid_register_params
+                 | response_type: "Cancelled"
+               })
     end
 
-    test "returns request_failed with Error struct on API error body" do
+    test "returns request_failed with Error struct on API error body", %{client: client} do
       Mock.push_response({:ok, 200, [], @auth_success})
       Mock.push_response({:ok, 400, [], @api_error})
 
       assert {:error, :request_failed, %Response.Error{} = err} =
-               Daraja.register_url(@valid_register_params)
+               Daraja.C2B.register_url(client, @valid_register_params)
 
       assert err.error_code == "400.003.01"
     end
 
-    test "returns http_error on transport failure" do
+    test "returns http_error on transport failure", %{client: client} do
       Mock.push_response({:ok, 200, [], @auth_success})
       Mock.push_response({:error, :timeout})
 
-      assert {:error, :http_error, :timeout} = Daraja.register_url(@valid_register_params)
+      assert {:error, :http_error, :timeout} =
+               Daraja.C2B.register_url(client, @valid_register_params)
     end
   end
 
-  describe "register_url/1 auth failure" do
-    test "returns auth_failed without making API call" do
+  describe "register_url/2 auth failure" do
+    test "returns auth_failed without making API call", %{client: client} do
       Mock.push_response({:ok, 401, [], "Unauthorized"})
 
-      assert {:error, :auth_failed, "Unauthorized"} = Daraja.register_url(@valid_register_params)
+      assert {:error, :auth_failed, "Unauthorized"} =
+               Daraja.C2B.register_url(client, @valid_register_params)
     end
   end
 
-  describe "register_url/1 with invalid params" do
-    test "returns invalid_request when short_code is missing" do
+  describe "register_url/2 with invalid params" do
+    test "returns invalid_request when short_code is missing", %{client: client} do
       assert {:error, :invalid_request, missing} =
-               Daraja.register_url(Map.delete(@valid_register_params, :short_code))
+               Daraja.C2B.register_url(client, Map.delete(@valid_register_params, :short_code))
 
       assert :short_code in missing
     end
 
-    test "returns invalid_request listing all missing required fields" do
-      assert {:error, :invalid_request, missing} = Daraja.register_url(%{})
+    test "returns invalid_request listing all missing required fields", %{client: client} do
+      assert {:error, :invalid_request, missing} = Daraja.C2B.register_url(client, %{})
 
       assert Enum.sort(missing) ==
                [:confirmation_url, :response_type, :short_code, :validation_url]
     end
 
-    test "returns invalid_request when response_type is not Completed or Cancelled" do
+    test "returns invalid_request when response_type is not Completed or Cancelled", %{
+      client: client
+    } do
       assert {:error, :invalid_request, [{:response_type, msg}]} =
-               Daraja.register_url(%{@valid_register_params | response_type: "completed"})
+               Daraja.C2B.register_url(client, %{
+                 @valid_register_params
+                 | response_type: "completed"
+               })
 
       assert msg =~ "Completed"
     end
   end
 
   # ---------------------------------------------------------------------------
-  # simulate/1
+  # simulate/2
   # ---------------------------------------------------------------------------
 
-  describe "simulate/1 with valid params" do
-    test "returns Success struct on happy path" do
+  describe "simulate/2 with valid params" do
+    test "returns Success struct on happy path", %{client: client} do
       Mock.push_response({:ok, 200, [], @auth_success})
       Mock.push_response({:ok, 200, [], @simulate_success})
 
-      assert {:ok, %Response.Success{} = result} = Daraja.simulate(@valid_simulate_params)
+      assert {:ok, %Response.Success{} = result} =
+               Daraja.C2B.simulate(client, @valid_simulate_params)
+
       assert result.response_code == "0"
 
       assert result.originator_conversation_id ==
                "53e3-4aa8-9fe0-8fb5e4092cdd3405976"
     end
 
-    test "accepts CustomerBuyGoodsOnline command_id without bill_ref_number" do
+    test "accepts CustomerBuyGoodsOnline command_id without bill_ref_number", %{client: client} do
       Mock.push_response({:ok, 200, [], @auth_success})
       Mock.push_response({:ok, 200, [], @simulate_success})
 
@@ -170,51 +178,56 @@ defmodule Daraja.C2BTest do
         |> Map.put(:command_id, "CustomerBuyGoodsOnline")
         |> Map.delete(:bill_ref_number)
 
-      assert {:ok, %Response.Success{}} = Daraja.simulate(params)
+      assert {:ok, %Response.Success{}} = Daraja.C2B.simulate(client, params)
     end
 
-    test "returns request_failed with Error struct on API error body" do
+    test "returns request_failed with Error struct on API error body", %{client: client} do
       Mock.push_response({:ok, 200, [], @auth_success})
       Mock.push_response({:ok, 400, [], @api_error})
 
       assert {:error, :request_failed, %Response.Error{} = err} =
-               Daraja.simulate(@valid_simulate_params)
+               Daraja.C2B.simulate(client, @valid_simulate_params)
 
       assert err.error_code == "400.003.01"
     end
 
-    test "returns http_error on transport failure" do
+    test "returns http_error on transport failure", %{client: client} do
       Mock.push_response({:ok, 200, [], @auth_success})
       Mock.push_response({:error, :closed})
 
-      assert {:error, :http_error, :closed} = Daraja.simulate(@valid_simulate_params)
+      assert {:error, :http_error, :closed} =
+               Daraja.C2B.simulate(client, @valid_simulate_params)
     end
   end
 
-  describe "simulate/1 auth failure" do
-    test "returns auth_failed without making API call" do
+  describe "simulate/2 auth failure" do
+    test "returns auth_failed without making API call", %{client: client} do
       Mock.push_response({:ok, 401, [], "Unauthorized"})
 
-      assert {:error, :auth_failed, "Unauthorized"} = Daraja.simulate(@valid_simulate_params)
+      assert {:error, :auth_failed, "Unauthorized"} =
+               Daraja.C2B.simulate(client, @valid_simulate_params)
     end
   end
 
-  describe "simulate/1 with invalid params" do
-    test "returns invalid_request when amount is missing" do
+  describe "simulate/2 with invalid params" do
+    test "returns invalid_request when amount is missing", %{client: client} do
       assert {:error, :invalid_request, missing} =
-               Daraja.simulate(Map.delete(@valid_simulate_params, :amount))
+               Daraja.C2B.simulate(client, Map.delete(@valid_simulate_params, :amount))
 
       assert :amount in missing
     end
 
-    test "returns invalid_request listing all missing required fields" do
-      assert {:error, :invalid_request, missing} = Daraja.simulate(%{})
+    test "returns invalid_request listing all missing required fields", %{client: client} do
+      assert {:error, :invalid_request, missing} = Daraja.C2B.simulate(client, %{})
       assert Enum.sort(missing) == [:amount, :command_id, :msisdn, :short_code]
     end
 
-    test "returns invalid_request when command_id is not a valid value" do
+    test "returns invalid_request when command_id is not a valid value", %{client: client} do
       assert {:error, :invalid_request, [{:command_id, msg}]} =
-               Daraja.simulate(%{@valid_simulate_params | command_id: "InvalidCommand"})
+               Daraja.C2B.simulate(client, %{
+                 @valid_simulate_params
+                 | command_id: "InvalidCommand"
+               })
 
       assert msg =~ "CustomerPayBillOnline"
     end
