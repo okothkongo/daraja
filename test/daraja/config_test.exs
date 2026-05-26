@@ -5,26 +5,9 @@ defmodule Daraja.ConfigTest do
 
   setup do
     on_exit(fn ->
-      Application.delete_env(:daraja, :environment)
       Application.delete_env(:daraja, :consumer_key)
+      Application.delete_env(:daraja, :some_optional_key)
     end)
-  end
-
-  describe "base_url/0" do
-    test "returns sandbox URL by default" do
-      Application.delete_env(:daraja, :environment)
-      assert Config.base_url() == "https://sandbox.safaricom.co.ke"
-    end
-
-    test "returns sandbox URL when environment is :sandbox" do
-      Application.put_env(:daraja, :environment, :sandbox)
-      assert Config.base_url() == "https://sandbox.safaricom.co.ke"
-    end
-
-    test "returns production URL when environment is :production" do
-      Application.put_env(:daraja, :environment, :production)
-      assert Config.base_url() == "https://api.safaricom.co.ke"
-    end
   end
 
   describe "get!/1" do
@@ -36,6 +19,18 @@ defmodule Daraja.ConfigTest do
     test "raises when key is missing" do
       Application.delete_env(:daraja, :consumer_key)
       assert_raise RuntimeError, ~r/:consumer_key/, fn -> Config.get!(:consumer_key) end
+    end
+  end
+
+  describe "get/2" do
+    test "returns the value when the key is set" do
+      Application.put_env(:daraja, :some_optional_key, :present)
+      assert Config.get(:some_optional_key, :fallback) == :present
+    end
+
+    test "returns the default when the key is missing" do
+      Application.delete_env(:daraja, :some_optional_key)
+      assert Config.get(:some_optional_key, :fallback) == :fallback
     end
   end
 end

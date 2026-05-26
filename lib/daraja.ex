@@ -2,11 +2,18 @@ defmodule Daraja do
   @moduledoc """
   Elixir client for the Safaricom Daraja API.
 
+  All API calls take a `Daraja.Client` as their first argument. Build a client
+  once and reuse it; per-request options on `Daraja.Client.new/1` override
+  values read from the application environment, which is handy for multi-tenant
+  callers.
+
+      client = Daraja.Client.new()
+
   ## M-Pesa Express (STK Push)
 
   Initiate a payment prompt on a customer's phone:
 
-      Daraja.stk_push(%{
+      Daraja.Express.request(client, %{
         amount: 100,
         phone_number: "254712345678",
         account_reference: "Order-001"
@@ -16,7 +23,7 @@ defmodule Daraja do
 
   Register callback URLs for payment notifications:
 
-      Daraja.register_url(%{
+      Daraja.C2B.register_url(client, %{
         short_code: "600984",
         response_type: "Completed",
         confirmation_url: "https://example.com/c2b/confirmation",
@@ -25,7 +32,7 @@ defmodule Daraja do
 
   Simulate a payment in the sandbox environment:
 
-      Daraja.simulate(%{
+      Daraja.C2B.simulate(client, %{
         short_code: "600984",
         command_id: "CustomerPayBillOnline",
         amount: 100,
@@ -35,17 +42,17 @@ defmodule Daraja do
 
   ## Business to Customer (B2C)
 
-  Encrypt your initiator password to build `SecurityCredential`:
+  Encrypt your initiator password to build a `SecurityCredential`:
 
       {:ok, security_credential} =
-        Daraja.encrypt_b2c_credential(
+        Daraja.B2C.SecurityCredential.encrypt(
           "your-initiator-password",
           File.read!("sandbox-cert.cer")
         )
 
   Initiate a B2C payout request:
 
-      Daraja.b2c_payment(%{
+      Daraja.B2C.payment(client, %{
         originator_conversation_id: "my-unique-id-001",
         initiator_name: "testapi",
         security_credential: security_credential,
@@ -59,7 +66,9 @@ defmodule Daraja do
         occasion: "Promo"
       })
 
-  Configure credentials in your application config:
+  ## Configuration
+
+  Configure default credentials in your application config:
 
       config :daraja,
         consumer_key: "...",
@@ -68,6 +77,14 @@ defmodule Daraja do
         passkey: "bfb279...",
         callback_url: "https://example.com/callback",
         environment: :sandbox
+
+  Per-call overrides for multi-tenant callers:
+
+      client =
+        Daraja.Client.new(
+          consumer_key: merchant.consumer_key,
+          consumer_secret: merchant.consumer_secret
+        )
 
   ## Custom HTTP Client
 
@@ -80,44 +97,4 @@ defmodule Daraja do
   def http_client do
     Application.get_env(:daraja, :http_client, Daraja.HTTPClient.Finch)
   end
-
-  @doc """
-  Initiates an STK Push (M-Pesa Express) payment request.
-
-  Required params: `amount`, `phone_number`, `account_reference`.
-  Optional params: `transaction_desc`, `transaction_type`.
-  """
-  defdelegate stk_push(params), to: Daraja.Express
-
-  @doc """
-  Registers C2B callback URLs for payment notifications.
-
-  Required params: `short_code`, `response_type`, `confirmation_url`, `validation_url`.
-  """
-  defdelegate register_url(params), to: Daraja.C2B
-
-  @doc """
-  Simulates a C2B payment transaction. Sandbox only.
-
-  Required params: `short_code`, `command_id`, `amount`, `msisdn`.
-  Optional params: `bill_ref_number`.
-  """
-  defdelegate simulate(params), to: Daraja.C2B
-
-  @doc """
-  Initiates a B2C payout request.
-
-  Required params: `originator_conversation_id`, `initiator_name`,
-  `security_credential`, `command_id`, `amount`, `party_a`, `party_b`,
-  `remarks`, `queue_timeout_url`, `result_url`.
-  Optional params: `occasion`.
-  """
-  defdelegate b2c_payment(params), to: Daraja.B2C, as: :payment
-
-  @doc """
-  Encrypts plaintext initiator password into B2C `SecurityCredential`.
-  """
-  defdelegate encrypt_b2c_credential(password, cert_pem),
-    to: Daraja.B2C.SecurityCredential,
-    as: :encrypt
 end
