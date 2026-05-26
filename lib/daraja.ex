@@ -66,6 +66,33 @@ defmodule Daraja do
         occasion: "Promo"
       })
 
+  ## Business to Business (B2B)
+
+  Build a security credential (same utility used by B2C):
+
+      {:ok, security_credential} =
+        Daraja.B2C.SecurityCredential.encrypt(
+          "your-initiator-password",
+          File.read!("sandbox-cert.cer")
+        )
+
+  Initiate a B2B transfer request:
+
+      Daraja.B2B.request(client, %{
+        initiator: "testapi",
+        security_credential: security_credential,
+        command_id: "BusinessPayBill",
+        sender_identifier_type: 4,
+        receiver_identifier_type: 4,
+        amount: 10_500,
+        party_a: "600992",
+        party_b: "600000",
+        account_reference: "INV-001",
+        remarks: "B2B Payment",
+        queue_timeout_url: "https://example.com/b2b/timeout",
+        result_url: "https://example.com/b2b/result"
+      })
+
   ## Configuration
 
   Configure default credentials in your application config:
@@ -76,7 +103,20 @@ defmodule Daraja do
         business_short_code: "174379",
         passkey: "bfb279...",
         callback_url: "https://example.com/callback",
-        environment: :sandbox
+        environment: :sandbox,
+        b2b_initiator: "testapi",
+        b2b_security_credential: "base64-credential",
+        b2b_queue_timeout_url: "https://example.com/b2b/timeout",
+        b2b_result_url: "https://example.com/b2b/result",
+        b2c_initiator_name: "testapi",
+        b2c_security_credential: "base64-credential",
+        b2c_queue_timeout_url: "https://example.com/b2c/timeout",
+        b2c_result_url: "https://example.com/b2c/result"
+
+  The `b2b_*` and `b2c_*` keys are optional defaults for `Daraja.B2B.request/2`
+  and `Daraja.B2C.payment/2`. Per-call params always take precedence over env
+  values, which is handy for multi-tenant callers that need to override
+  defaults per request.
 
   Per-call overrides for multi-tenant callers:
 

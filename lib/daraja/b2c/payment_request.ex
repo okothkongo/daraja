@@ -16,6 +16,20 @@ defmodule Daraja.B2C.PaymentRequest do
 
   Optional fields:
   - `occasion`
+
+  ## Application env fallbacks
+
+  `initiator_name`, `security_credential`, `queue_timeout_url`, and `result_url`
+  fall back to the `:daraja` application env when not supplied in params:
+
+      config :daraja,
+        b2c_initiator_name: "testapi",
+        b2c_security_credential: "base64-credential",
+        b2c_queue_timeout_url: "https://example.com/b2c/timeout",
+        b2c_result_url: "https://example.com/b2c/result"
+
+  Per-call params always take precedence over env values, which is handy for
+  multi-tenant callers that need to override defaults per request.
   """
 
   @type command_id :: String.t()
@@ -62,11 +76,21 @@ defmodule Daraja.B2C.PaymentRequest do
   ]
 
   @valid_command_ids ~w[SalaryPayment BusinessPayment PromotionPayment]
+  @env_fallbacks %{
+    initiator_name: :b2c_initiator_name,
+    security_credential: :b2c_security_credential,
+    queue_timeout_url: :b2c_queue_timeout_url,
+    result_url: :b2c_result_url
+  }
 
   @spec new(map()) ::
           {:ok, t()} | {:error, :invalid_request, [atom() | {:command_id, String.t()}]}
   def new(params) when is_map(params) do
-    params = normalize_keys(params)
+    params =
+      params
+      |> normalize_keys()
+      |> apply_env_fallbacks()
+
     missing = Enum.filter(@required, fn key -> is_nil(params[key]) end)
 
     cond do
@@ -104,5 +128,14 @@ defmodule Daraja.B2C.PaymentRequest do
     end)
   rescue
     ArgumentError -> Map.new(params, fn {k, v} -> {k, v} end)
+  end
+
+  defp apply_env_fallbacks(params) do
+    Enum.reduce(@env_fallbacks, params, fn {field, env_key}, acc ->
+      Map.update(acc, field, Daraja.Config.get(env_key, nil), fn
+        nil -> Daraja.Config.get(env_key, nil)
+        value -> value
+      end)
+    end)
   end
 end
