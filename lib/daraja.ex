@@ -66,6 +66,33 @@ defmodule Daraja do
         occasion: "Promo"
       })
 
+  ## Business to Business (B2B)
+
+  Build a security credential (same utility used by B2C):
+
+      {:ok, security_credential} =
+        Daraja.B2C.SecurityCredential.encrypt(
+          "your-initiator-password",
+          File.read!("sandbox-cert.cer")
+        )
+
+  Initiate a B2B transfer request:
+
+      Daraja.B2B.request(client, %{
+        initiator: "testapi",
+        security_credential: security_credential,
+        command_id: "BusinessPayBill",
+        sender_identifier_type: 4,
+        receiver_identifier_type: 4,
+        amount: 10_500,
+        party_a: "600992",
+        party_b: "600000",
+        account_reference: "INV-001",
+        remarks: "B2B Payment",
+        queue_timeout_url: "https://example.com/b2b/timeout",
+        result_url: "https://example.com/b2b/result"
+      })
+
   ## Configuration
 
   Configure default credentials in your application config:
