@@ -18,6 +18,8 @@ jobs:
             otp: 27
           - elixir: 1.19.x
             otp: 28
+          - elixir: 1.20.x
+            otp: 29
     env:
       MIX_ENV: test
     steps:
@@ -46,14 +48,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: erlef/setup-beam@v1
         with:
-          otp-version: 28
-          elixir-version: 1.19.x
+          otp-version: 29
+          elixir-version: 1.20.x
       - name: Cache build artifacts
         uses: actions/cache@v4
         with:
           path: |
             deps
             _build
-          key: 28-1.19.x-dialyzer
+          key: 29-1.20.x-dialyzer
       - run: mix deps.get --only test
       - run: mix dialyzer --halt-exit-status
