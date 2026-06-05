@@ -30,7 +30,8 @@ defmodule Daraja.MixProject do
     [
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40.2", only: :dev},
-      {:finch, "~> 0.18", optional: true}
+      {:finch, "~> 0.18", optional: true},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]
   end
 
@@ -73,7 +74,8 @@ defmodule Daraja.MixProject do
       lint: [
         "compile --warnings-as-errors --force",
         "format --check-formatted",
-        "deps.unlock --unused"
+        "deps.unlock --unused",
+        "credo  --strict"
       ]
     ]
   end

@@ -95,13 +95,12 @@ defmodule Daraja.C2B do
   defp do_register_url(%Client{} = client, %RegisterUrlRequest{} = request) do
     with {:ok, token} <- Daraja.Auth.fetch_token(client) do
       body =
-        %{
+        JSON.encode!(%{
           "ShortCode" => request.short_code,
           "ResponseType" => request.response_type,
           "ConfirmationURL" => request.confirmation_url,
           "ValidationURL" => request.validation_url
-        }
-        |> JSON.encode!()
+        })
 
       url = Client.base_url(client) <> @register_url_path
       headers = [{"Authorization", "Bearer " <> token}, {"Content-Type", "application/json"}]
@@ -112,14 +111,13 @@ defmodule Daraja.C2B do
   defp do_simulate(%Client{} = client, %SimulateRequest{} = request) do
     with {:ok, token} <- Daraja.Auth.fetch_token(client) do
       body =
-        %{
+        JSON.encode!(%{
           "ShortCode" => request.short_code,
           "CommandID" => request.command_id,
           "Amount" => request.amount,
           "Msisdn" => request.msisdn,
           "BillRefNumber" => request.bill_ref_number || ""
-        }
-        |> JSON.encode!()
+        })
 
       url = Client.base_url(client) <> @simulate_path
       headers = [{"Authorization", "Bearer " <> token}, {"Content-Type", "application/json"}]
