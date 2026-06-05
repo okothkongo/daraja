@@ -86,8 +86,7 @@ defmodule Daraja.B2C.Callback do
   end
 
   def result_parameters_map(parameters) when is_list(parameters) do
-    parameters
-    |> Enum.reduce(%{}, fn
+    Enum.reduce(parameters, %{}, fn
       %{key: key, value: value}, acc when is_binary(key) -> Map.put(acc, key, value)
       %{"Key" => key, "Value" => value}, acc when is_binary(key) -> Map.put(acc, key, value)
       _, acc -> acc

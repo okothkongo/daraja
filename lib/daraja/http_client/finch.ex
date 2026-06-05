@@ -18,7 +18,8 @@ defmodule Daraja.HTTPClient.Finch do
 
   @impl Daraja.HTTPClient
   def request(method, url, headers, body) do
-    Finch.build(method, url, headers, body)
+    method
+    |> Finch.build(url, headers, body)
     |> Finch.request(Daraja.Finch)
     |> case do
       {:ok, %Finch.Response{status: status, headers: headers, body: body}} ->

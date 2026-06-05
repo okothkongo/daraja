@@ -53,12 +53,12 @@ defmodule Daraja.Express do
   defp do_request(%Client{} = client, %Request{} = request) do
     with :ok <- validate_client(client),
          {:ok, token} <- Daraja.Auth.fetch_token(client) do
-      timestamp = NaiveDateTime.utc_now() |> Calendar.strftime("%Y%m%d%H%M%S")
+      timestamp = Calendar.strftime(NaiveDateTime.utc_now(), "%Y%m%d%H%M%S")
       short_code = client.business_short_code
       password = Base.encode64(short_code <> client.passkey <> timestamp)
 
       body =
-        %{
+        JSON.encode!(%{
           "BusinessShortCode" => short_code,
           "Password" => password,
           "Timestamp" => timestamp,
@@ -70,8 +70,7 @@ defmodule Daraja.Express do
           "CallBackURL" => client.callback_url,
           "AccountReference" => request.account_reference,
           "TransactionDesc" => request.transaction_desc || ""
-        }
-        |> JSON.encode!()
+        })
 
       url = Client.base_url(client) <> @stk_push_path
       headers = [{"Authorization", "Bearer " <> token}, {"Content-Type", "application/json"}]
