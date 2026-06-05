@@ -1,7 +1,7 @@
 defmodule Daraja.B2CTest do
   use ExUnit.Case, async: false
 
-  alias Daraja.B2C.Response
+  alias Daraja.B2C.{PaymentRequest, Response}
   alias Daraja.Client
   alias Daraja.HTTPClient.Mock
 
@@ -87,6 +87,32 @@ defmodule Daraja.B2CTest do
 
       assert {:error, :http_error, :timeout} = Daraja.B2C.payment(client, @valid_params)
     end
+
+    test "returns request_failed with the raw body when the response is not JSON", %{
+      client: client
+    } do
+      Mock.push_response({:ok, 200, [], @auth_success})
+      Mock.push_response({:ok, 200, [], "not json <<<"})
+
+      assert {:error, :request_failed, "not json <<<"} =
+               Daraja.B2C.payment(client, @valid_params)
+    end
+
+    test "accepts a prebuilt PaymentRequest struct", %{client: client} do
+      Mock.push_response({:ok, 200, [], @auth_success})
+      Mock.push_response({:ok, 200, [], @payment_success})
+
+      {:ok, request} = PaymentRequest.new(@valid_params)
+      assert {:ok, %Response.Success{}} = Daraja.B2C.payment(client, request)
+    end
+
+    test "omits Occasion when it is not provided", %{client: client} do
+      Mock.push_response({:ok, 200, [], @auth_success})
+      Mock.push_response({:ok, 200, [], @payment_success})
+
+      params = Map.delete(@valid_params, :occasion)
+      assert {:ok, %Response.Success{}} = Daraja.B2C.payment(client, params)
+    end
   end
 
   describe "payment/2 auth failure" do
@@ -109,6 +135,11 @@ defmodule Daraja.B2CTest do
                Daraja.B2C.payment(client, %{@valid_params | command_id: "InvalidCommand"})
 
       assert msg =~ "BusinessPayment"
+    end
+
+    test "tolerates string keys that are not known atoms", %{client: client} do
+      assert {:error, :invalid_request, _missing} =
+               Daraja.B2C.payment(client, %{"definitely_not_an_atom_zzz" => 1})
     end
   end
 

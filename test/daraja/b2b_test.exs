@@ -1,7 +1,7 @@
 defmodule Daraja.B2BTest do
   use ExUnit.Case, async: false
 
-  alias Daraja.B2B.{Callback, Response}
+  alias Daraja.B2B.{Callback, PaymentRequest, Response}
   alias Daraja.Client
   alias Daraja.HTTPClient.Mock
 
@@ -129,6 +129,32 @@ defmodule Daraja.B2BTest do
 
       assert {:error, :http_error, :timeout} = Daraja.B2B.request(client, @valid_params)
     end
+
+    test "returns request_failed with the raw body when the response is not JSON", %{
+      client: client
+    } do
+      Mock.push_response({:ok, 200, [], @auth_success})
+      Mock.push_response({:ok, 200, [], "not json <<<"})
+
+      assert {:error, :request_failed, "not json <<<"} =
+               Daraja.B2B.request(client, @valid_params)
+    end
+
+    test "accepts a prebuilt PaymentRequest struct", %{client: client} do
+      Mock.push_response({:ok, 200, [], @auth_success})
+      Mock.push_response({:ok, 200, [], @payment_success})
+
+      {:ok, request} = PaymentRequest.new(@valid_params)
+      assert {:ok, %Response.Success{}} = Daraja.B2B.request(client, request)
+    end
+
+    test "omits AccountReference when it is not provided", %{client: client} do
+      Mock.push_response({:ok, 200, [], @auth_success})
+      Mock.push_response({:ok, 200, [], @payment_success})
+
+      params = Map.delete(@valid_params, :account_reference)
+      assert {:ok, %Response.Success{}} = Daraja.B2B.request(client, params)
+    end
   end
 
   describe "request/2 auth failure" do
@@ -161,6 +187,11 @@ defmodule Daraja.B2BTest do
     test "returns invalid_request when receiver_identifier_type is invalid", %{client: client} do
       assert {:error, :invalid_request, [{:receiver_identifier_type, "must be 2 or 4"}]} =
                Daraja.B2B.request(client, %{@valid_params | receiver_identifier_type: 1})
+    end
+
+    test "tolerates string keys that are not known atoms", %{client: client} do
+      assert {:error, :invalid_request, _missing} =
+               Daraja.B2B.request(client, %{"definitely_not_an_atom_zzz" => 1})
     end
   end
 
@@ -258,6 +289,53 @@ defmodule Daraja.B2BTest do
 
     test "accept/0 returns the success acknowledgement map" do
       assert %{"ResultCode" => 0, "ResultDesc" => "Success"} = Callback.accept()
+    end
+
+    test "from_map/1 returns an empty Result for unrecognised payloads" do
+      assert %Callback.Result{result_code: nil} = Callback.from_map(%{})
+    end
+
+    test "sets reference_item to nil when ReferenceData is absent" do
+      payload = %{"Result" => %{"ResultCode" => 0, "TransactionID" => "X1"}}
+
+      result = Callback.from_map(payload)
+      assert result.reference_item == nil
+    end
+
+    test "flattens a single ResultParameter object (not wrapped in a list)" do
+      payload = %{
+        "Result" => %{
+          "ResultParameters" => %{
+            "ResultParameter" => %{"Key" => "TransactionReceipt", "Value" => "SG632NMUAB"}
+          }
+        }
+      }
+
+      result = Callback.from_map(payload)
+      assert result.result_parameters_map == %{"TransactionReceipt" => "SG632NMUAB"}
+    end
+
+    test "ignores a malformed ResultParameter value" do
+      payload = %{"Result" => %{"ResultParameters" => %{"ResultParameter" => "oops"}}}
+
+      result = Callback.from_map(payload)
+      assert result.result_parameters == []
+    end
+
+    test "result_parameters_map/1 returns an empty map for nil" do
+      assert Callback.result_parameters_map(nil) == %{}
+    end
+
+    test "result_parameters_map/1 accepts a full payload map" do
+      assert Callback.result_parameters_map(@successful_callback_payload) == %{
+               "TransactionAmount" => 10,
+               "TransactionReceipt" => "SG632NMUAB",
+               "ReceiverPartyPublicName" => "600000 - Receiver Business"
+             }
+    end
+
+    test "result_parameters_map/1 ignores entries it cannot flatten" do
+      assert Callback.result_parameters_map([%{"unexpected" => 1}, "junk"]) == %{}
     end
   end
 end

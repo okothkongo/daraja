@@ -37,7 +37,7 @@ jobs:
           key: ${{ matrix.otp }}-${{ matrix.elixir }}-build
       - run: mix deps.get --only test
       - run: mix lint
-      - run: mix test
+      - run: mix coveralls
 
   dialyzer:
     name: mix dialyzer
