@@ -1,7 +1,7 @@
 defmodule Daraja.C2BTest do
   use ExUnit.Case, async: false
 
-  alias Daraja.C2B.{Callback, Response}
+  alias Daraja.C2B.{Callback, RegisterUrlRequest, Response, SimulateRequest}
   alias Daraja.Client
   alias Daraja.HTTPClient.Mock
 
@@ -112,6 +112,29 @@ defmodule Daraja.C2BTest do
       assert {:error, :http_error, :timeout} =
                Daraja.C2B.register_url(client, @valid_register_params)
     end
+
+    test "returns request_failed with the raw body when the response is not JSON", %{
+      client: client
+    } do
+      Mock.push_response({:ok, 200, [], @auth_success})
+      Mock.push_response({:ok, 200, [], "not json <<<"})
+
+      assert {:error, :request_failed, "not json <<<"} =
+               Daraja.C2B.register_url(client, @valid_register_params)
+    end
+
+    test "accepts a prebuilt RegisterUrlRequest struct", %{client: client} do
+      Mock.push_response({:ok, 200, [], @auth_success})
+      Mock.push_response({:ok, 200, [], @register_success})
+
+      {:ok, request} = RegisterUrlRequest.new(@valid_register_params)
+      assert {:ok, %Response.Success{}} = Daraja.C2B.register_url(client, request)
+    end
+
+    test "tolerates string keys that are not known atoms", %{client: client} do
+      assert {:error, :invalid_request, _missing} =
+               Daraja.C2B.register_url(client, %{"definitely_not_an_atom_zzz" => 1})
+    end
   end
 
   describe "register_url/2 auth failure" do
@@ -197,6 +220,19 @@ defmodule Daraja.C2BTest do
 
       assert {:error, :http_error, :closed} =
                Daraja.C2B.simulate(client, @valid_simulate_params)
+    end
+
+    test "accepts a prebuilt SimulateRequest struct", %{client: client} do
+      Mock.push_response({:ok, 200, [], @auth_success})
+      Mock.push_response({:ok, 200, [], @simulate_success})
+
+      {:ok, request} = SimulateRequest.new(@valid_simulate_params)
+      assert {:ok, %Response.Success{}} = Daraja.C2B.simulate(client, request)
+    end
+
+    test "tolerates string keys that are not known atoms", %{client: client} do
+      assert {:error, :invalid_request, _missing} =
+               Daraja.C2B.simulate(client, %{"definitely_not_an_atom_zzz" => 1})
     end
   end
 

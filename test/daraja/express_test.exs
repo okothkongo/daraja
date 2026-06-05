@@ -2,7 +2,7 @@ defmodule Daraja.ExpressTest do
   use ExUnit.Case, async: false
 
   alias Daraja.Client
-  alias Daraja.Express.Response
+  alias Daraja.Express.{Request, Response}
   alias Daraja.HTTPClient.Mock
 
   @valid_params %{
@@ -75,6 +75,24 @@ defmodule Daraja.ExpressTest do
 
       assert {:error, :http_error, :timeout} = Daraja.Express.request(client, @valid_params)
     end
+
+    test "returns request_failed with the raw body when the response is not JSON", %{
+      client: client
+    } do
+      Mock.push_response({:ok, 200, [], @auth_success})
+      Mock.push_response({:ok, 200, [], "not json <<<"})
+
+      assert {:error, :request_failed, "not json <<<"} =
+               Daraja.Express.request(client, @valid_params)
+    end
+
+    test "accepts a prebuilt Request struct", %{client: client} do
+      Mock.push_response({:ok, 200, [], @auth_success})
+      Mock.push_response({:ok, 200, [], @stk_success})
+
+      {:ok, request} = Request.new(@valid_params)
+      assert {:ok, %Response.Success{}} = Daraja.Express.request(client, request)
+    end
   end
 
   describe "request/2 auth failure" do
@@ -100,6 +118,11 @@ defmodule Daraja.ExpressTest do
     test "returns invalid_request listing all missing required fields", %{client: client} do
       assert {:error, :invalid_request, missing} = Daraja.Express.request(client, %{})
       assert Enum.sort(missing) == [:account_reference, :amount, :phone_number]
+    end
+
+    test "tolerates string keys that are not known atoms", %{client: client} do
+      assert {:error, :invalid_request, _missing} =
+               Daraja.Express.request(client, %{"definitely_not_an_atom_zzz" => 1})
     end
   end
 

@@ -16,7 +16,15 @@ defmodule Daraja.MixProject do
       package: package(),
       docs: docs(),
       aliases: aliases(),
-      preferred_cli_env: [docs: :docs]
+      test_coverage: [tool: ExCoveralls],
+      preferred_cli_env: [
+        coveralls: :test,
+        "coveralls.detail": :test,
+        "coveralls.post": :test,
+        "coveralls.html": :test,
+        "coveralls.cobertura": :test,
+        docs: :docs
+      ]
     ]
   end
 
@@ -31,7 +39,8 @@ defmodule Daraja.MixProject do
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ex_doc, "~> 0.40.2", only: :dev},
       {:finch, "~> 0.18", optional: true},
-      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:excoveralls, only: :test}
     ]
   end
 

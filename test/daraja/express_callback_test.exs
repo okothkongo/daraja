@@ -58,4 +58,46 @@ defmodule Daraja.ExpressCallbackTest do
   test "accept/0 returns the success acknowledgement map" do
     assert %{"ResultCode" => 0, "ResultDesc" => "Success"} = Callback.accept()
   end
+
+  test "flattens a single CallbackMetadata Item (not wrapped in a list)" do
+    payload = %{
+      "Body" => %{
+        "stkCallback" => %{
+          "ResultCode" => 0,
+          "CallbackMetadata" => %{"Item" => %{"Name" => "Amount", "Value" => 1}}
+        }
+      }
+    }
+
+    result = Callback.from_map(payload)
+    assert result.callback_metadata_map == %{"Amount" => 1}
+  end
+
+  test "ignores a malformed CallbackMetadata Item value" do
+    payload = %{
+      "Body" => %{
+        "stkCallback" => %{"ResultCode" => 0, "CallbackMetadata" => %{"Item" => "oops"}}
+      }
+    }
+
+    result = Callback.from_map(payload)
+    assert result.callback_metadata == []
+  end
+
+  test "callback_metadata_map/1 returns an empty map for nil" do
+    assert Callback.callback_metadata_map(nil) == %{}
+  end
+
+  test "callback_metadata_map/1 ignores entries it cannot flatten" do
+    assert Callback.callback_metadata_map([%{"unexpected" => 1}, "junk"]) == %{}
+  end
+
+  test "callback_metadata_map/1 flattens both atom- and string-keyed items" do
+    items = [%{name: "Amount", value: 1}, %{"Name" => "MpesaReceiptNumber", "Value" => "NLJ7"}]
+
+    assert Callback.callback_metadata_map(items) == %{
+             "Amount" => 1,
+             "MpesaReceiptNumber" => "NLJ7"
+           }
+  end
 end
