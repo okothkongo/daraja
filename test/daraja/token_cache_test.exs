@@ -3,6 +3,7 @@ defmodule Daraja.TokenCacheTest do
 
   alias Daraja.Client
   alias Daraja.HTTPClient.Mock
+  alias Daraja.Test.TokenCacheHelper
   alias Daraja.TokenCache
 
   # async: false is required because Daraja.HTTPClient.Mock is a shared global
@@ -23,7 +24,7 @@ defmodule Daraja.TokenCacheTest do
 
   test "returns cached token on second call without hitting network", %{client: client} do
     name = unique_name()
-    start_supervised!({TokenCache, name: name})
+    start_cache!(name: name)
 
     Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-cached","expires_in":"3600"})})
 
@@ -34,7 +35,7 @@ defmodule Daraja.TokenCacheTest do
 
   test "fetches from network on cold miss", %{client: client} do
     name = unique_name()
-    start_supervised!({TokenCache, name: name})
+    start_cache!(name: name)
 
     Mock.push_response({:ok, 200, [], ~s({"access_token":"fresh-tok","expires_in":"3600"})})
 
@@ -43,7 +44,7 @@ defmodule Daraja.TokenCacheTest do
 
   test "does not cache error responses", %{client: client} do
     name = unique_name()
-    start_supervised!({TokenCache, name: name})
+    start_cache!(name: name)
 
     Mock.push_response({:ok, 401, [], "Unauthorized"})
     Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-after-error","expires_in":"3600"})})
@@ -54,7 +55,7 @@ defmodule Daraja.TokenCacheTest do
 
   test "isolates tokens by client credentials", %{client: client} do
     name = unique_name()
-    start_supervised!({TokenCache, name: name})
+    start_cache!(name: name)
 
     client2 = Client.new(consumer_key: "other_key", consumer_secret: "other_secret")
 
@@ -72,7 +73,7 @@ defmodule Daraja.TokenCacheTest do
     name = unique_name()
     ttl = 2
     refresh_before = 1
-    start_supervised!({TokenCache, name: name, ttl: ttl, refresh_before: refresh_before})
+    start_cache!(name: name, ttl: ttl, refresh_before: refresh_before)
 
     Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-initial","expires_in":"2"})})
     Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-refreshed","expires_in":"2"})})
@@ -86,7 +87,7 @@ defmodule Daraja.TokenCacheTest do
 
   test "respects custom server name", %{client: client} do
     name = unique_name()
-    start_supervised!({TokenCache, name: name})
+    start_cache!(name: name)
 
     Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-custom","expires_in":"3600"})})
 
@@ -97,7 +98,7 @@ defmodule Daraja.TokenCacheTest do
   test "fetches fresh token when cached token is expired", %{client: client} do
     name = unique_name()
     ttl = 1
-    start_supervised!({TokenCache, name: name, ttl: ttl, refresh_before: 0})
+    start_cache!(name: name, ttl: ttl, refresh_before: 0)
 
     Mock.push_response({:ok, 200, [], ~s({"access_token":"old-tok","expires_in":"1"})})
     Mock.push_response({:ok, 200, [], ~s({"access_token":"fresh","expires_in":"1"})})
@@ -111,7 +112,7 @@ defmodule Daraja.TokenCacheTest do
 
   test "fetches fresh token when consumer_secret rotates", %{client: client} do
     name = unique_name()
-    start_supervised!({TokenCache, name: name})
+    start_cache!(name: name)
 
     Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-old","expires_in":"3600"})})
     Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-new","expires_in":"3600"})})
@@ -126,7 +127,7 @@ defmodule Daraja.TokenCacheTest do
 
   test "invalidate/1 evicts cached token for client", %{client: client} do
     name = unique_name()
-    start_supervised!({TokenCache, name: name})
+    start_cache!(name: name)
 
     Mock.push_response({:ok, 200, [], ~s({"access_token":"tok","expires_in":"3600"})})
     Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-fresh","expires_in":"3600"})})
@@ -138,7 +139,7 @@ defmodule Daraja.TokenCacheTest do
 
   test "rejects external ETS writes", %{client: client} do
     name = unique_name()
-    start_supervised!({TokenCache, name: name})
+    start_cache!(name: name)
     key = cache_key(client)
 
     assert_raise ArgumentError, fn ->
@@ -148,7 +149,7 @@ defmodule Daraja.TokenCacheTest do
 
   test "uses OAuth expires_in instead of configured ttl", %{client: client} do
     name = unique_name()
-    start_supervised!({TokenCache, name: name, ttl: 3600, refresh_before: 0})
+    start_cache!(name: name, ttl: 3600, refresh_before: 0)
 
     Mock.push_response({:ok, 200, [], ~s({"access_token":"short-lived","expires_in":"1"})})
     Mock.push_response({:ok, 200, [], ~s({"access_token":"refetched","expires_in":"1"})})
@@ -167,7 +168,7 @@ defmodule Daraja.TokenCacheTest do
   test "falls back to configured ttl when expires_in is missing", %{client: client} do
     name = unique_name()
     ttl = 1
-    start_supervised!({TokenCache, name: name, ttl: ttl, refresh_before: 0})
+    start_cache!(name: name, ttl: ttl, refresh_before: 0)
 
     Mock.push_response({:ok, 200, [], ~s({"access_token":"no-expiry"})})
     Mock.push_response({:ok, 200, [], ~s({"access_token":"refetched"})})
@@ -181,7 +182,7 @@ defmodule Daraja.TokenCacheTest do
 
   test "handles ETS ArgumentError during startup race", %{client: client} do
     name = unique_name()
-    pid = start_supervised!({TokenCache, name: name})
+    pid = start_cache!(name: name)
 
     Mock.push_response({:ok, 200, [], ~s({"access_token":"tok","expires_in":"3600"})})
 
@@ -193,7 +194,7 @@ defmodule Daraja.TokenCacheTest do
 
   test "returns already-cached token when re-checked under GenServer lock", %{client: client} do
     name = unique_name()
-    start_supervised!({TokenCache, name: name})
+    start_cache!(name: name)
 
     Mock.push_response({:ok, 200, [], ~s({"access_token":"tok","expires_in":"3600"})})
 
@@ -205,26 +206,28 @@ defmodule Daraja.TokenCacheTest do
     assert {:error, :no_response_queued} = Mock.request(:get, "", [], "")
   end
 
-  test "cleans up token and timer when background refresh fails", %{client: client} do
+  test "retains token and schedules retry when background refresh fails", %{client: client} do
     name = unique_name()
-    start_supervised!({TokenCache, name: name})
+    start_cache!(name: name)
 
     Mock.push_response({:ok, 200, [], ~s({"access_token":"tok","expires_in":"3600"})})
     assert {:ok, "tok"} = TokenCache.get_token(client, name)
 
     key = cache_key(client)
-    assert [{^key, _}] = :ets.lookup(name, key)
+    assert [{^key, {"tok", _expires_at, _ttl}}] = :ets.lookup(name, key)
 
     Mock.push_response({:ok, 401, [], "Unauthorized"})
     send(GenServer.whereis(name), {:refresh, key})
     :sys.get_state(name)
 
-    assert [] = :ets.lookup(name, key)
+    assert [{^key, {"tok", _expires_at, _ttl}}] = :ets.lookup(name, key)
+    assert {:ok, "tok"} = TokenCache.get_token(client, name)
+    assert {:error, :no_response_queued} = Mock.request(:get, "", [], "")
   end
 
   test "refetches via GenServer when ETS entry is expired", %{client: client} do
     name = unique_name()
-    start_supervised!({TokenCache, name: name})
+    start_cache!(name: name)
 
     Mock.push_response({:ok, 200, [], ~s({"access_token":"old-tok","expires_in":"3600"})})
     assert {:ok, "old-tok"} = TokenCache.get_token(client, name)
@@ -243,7 +246,7 @@ defmodule Daraja.TokenCacheTest do
 
   test "handle_call refetches when token expired under GenServer lock", %{client: client} do
     name = unique_name()
-    start_supervised!({TokenCache, name: name})
+    start_cache!(name: name)
 
     Mock.push_response({:ok, 200, [], ~s({"access_token":"old-tok","expires_in":"3600"})})
     assert {:ok, "old-tok"} = TokenCache.get_token(client, name)
@@ -262,7 +265,7 @@ defmodule Daraja.TokenCacheTest do
 
   test "ignores refresh messages for unknown cache keys", %{client: client} do
     name = unique_name()
-    start_supervised!({TokenCache, name: name})
+    start_cache!(name: name)
 
     Mock.push_response({:ok, 200, [], ~s({"access_token":"tok","expires_in":"3600"})})
     assert {:ok, "tok"} = TokenCache.get_token(client, name)
@@ -283,6 +286,25 @@ defmodule Daraja.TokenCacheTest do
 
     assert msg2 =~ "refresh_before (60) must be less than ttl (60)"
   end
+
+  test "fetches different credentials concurrently", %{client: client} do
+    name = unique_name()
+    start_cache!(name: name)
+
+    client2 = Client.new(consumer_key: "other_key", consumer_secret: "other_secret")
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-1","expires_in":"3600"})})
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-2","expires_in":"3600"})})
+
+    tasks = [
+      Task.async(fn -> TokenCache.get_token(client, name) end),
+      Task.async(fn -> TokenCache.get_token(client2, name) end)
+    ]
+
+    assert [{:ok, "tok-1"}, {:ok, "tok-2"}] = Task.await_many(tasks, 5_000)
+  end
+
+  defp start_cache!(opts), do: TokenCacheHelper.start!(opts)
 
   defp unique_name, do: :"test_cache_#{System.unique_integer([:positive])}"
 

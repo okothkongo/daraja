@@ -59,11 +59,12 @@ defmodule Daraja.Auth do
   @spec get_token(Client.t()) ::
           {:ok, String.t()} | {:error, :auth_failed, term()} | {:error, :http_error, term()}
   def get_token(%Client{} = client) do
-    cache = Application.get_env(:daraja, :token_cache, Daraja.TokenCache)
+    cache = Daraja.Runtime.token_cache_name()
 
     if Process.whereis(cache) do
       Daraja.TokenCache.get_token(client, cache)
     else
+      Daraja.Runtime.warn_uncached_token_once()
       fetch_token(client)
     end
   end
@@ -71,7 +72,7 @@ defmodule Daraja.Auth do
   @doc false
   @spec invalidate_token(Client.t()) :: :ok
   def invalidate_token(%Client{} = client) do
-    cache = Application.get_env(:daraja, :token_cache, Daraja.TokenCache)
+    cache = Daraja.Runtime.token_cache_name()
 
     if Process.whereis(cache) do
       Daraja.TokenCache.invalidate(client, cache)
@@ -144,6 +145,10 @@ defmodule Daraja.Auth do
   @spec fetch_token_info(Client.t(), pos_integer()) ::
           {:ok, token_info()} | {:error, :auth_failed, term()} | {:error, :http_error, term()}
   def fetch_token_info(%Client{} = client, default_ttl \\ @default_ttl) do
+    Daraja.HTTP.Retry.run(fn -> do_fetch_token_info(client, default_ttl) end)
+  end
+
+  defp do_fetch_token_info(%Client{} = client, default_ttl) do
     url = Client.base_url(client) <> @auth_url
     credentials = Base.encode64(client.consumer_key <> ":" <> client.consumer_secret)
     headers = [{"Authorization", "Basic " <> credentials}]

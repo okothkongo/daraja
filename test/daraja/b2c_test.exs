@@ -196,7 +196,7 @@ defmodule Daraja.B2CTest do
 
     test "invalidates cache and retries after payment 401", %{client: client} do
       name = :"b2c_cache_#{System.unique_integer([:positive])}"
-      start_supervised!({Daraja.TokenCache, name: name})
+      Daraja.Test.TokenCacheHelper.start!(name: name)
       Application.put_env(:daraja, :token_cache, name)
       on_exit(fn -> Application.delete_env(:daraja, :token_cache) end)
 

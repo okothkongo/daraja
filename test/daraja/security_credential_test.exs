@@ -142,6 +142,25 @@ defmodule Daraja.SecurityCredentialTest do
       assert credential != "password"
     end
 
+    test "caches encrypted tuple credentials" do
+      {_private_key, public_key} = rsa_keypair()
+
+      public_pem =
+        :public_key.pem_encode([:public_key.pem_entry_encode(:RSAPublicKey, public_key)])
+
+      assert {:ok, first} = SecurityCredential.resolve({"password", public_pem})
+      assert {:ok, second} = SecurityCredential.resolve({"password", public_pem})
+      assert first == second
+    end
+
+    test "rejects tuple credentials in production when disabled" do
+      Application.put_env(:daraja, :environment, :production)
+      Application.put_env(:daraja, :allow_tuple_security_credential, false)
+
+      assert {:error, :tuple_credentials_disabled} =
+               SecurityCredential.resolve({"password", @cert_pem})
+    end
+
     test "returns :invalid_public_key when pem in tuple is invalid" do
       assert {:error, :invalid_public_key} =
                SecurityCredential.resolve({"password", "not-a-pem"})

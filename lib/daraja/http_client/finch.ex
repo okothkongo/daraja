@@ -22,6 +22,12 @@ if Code.ensure_loaded?(Finch) do
 
         config :daraja, :http_client, Daraja.HTTPClient.Finch
 
+    ## Timeouts
+
+    Requests use `receive_timeout` from config (default `10_000` ms):
+
+        config :daraja, :http_receive_timeout, 10_000
+
     ## TLS
 
     Requests use Finch's default SSL settings, which validate server certificates
@@ -34,19 +40,20 @@ if Code.ensure_loaded?(Finch) do
 
     @impl Daraja.HTTPClient
     def request(method, url, headers, body) do
-      pool = Application.get_env(:daraja, :finch_name, Daraja.Finch)
+      pool = Daraja.Runtime.finch_pool_name()
+      receive_timeout = Daraja.Runtime.finch_receive_timeout()
 
-      unless Process.whereis(pool) do
-        {:error, {:finch_pool_not_started, pool}}
+      if Process.whereis(pool) do
+        do_request(method, url, headers, body, pool, receive_timeout)
       else
-        do_request(method, url, headers, body, pool)
+        {:error, {:finch_pool_not_started, pool}}
       end
     end
 
-    defp do_request(method, url, headers, body, pool) do
+    defp do_request(method, url, headers, body, pool, receive_timeout) do
       method
       |> Finch.build(url, headers, body)
-      |> Finch.request(pool)
+      |> Finch.request(pool, receive_timeout: receive_timeout)
       |> case do
         {:ok, %Finch.Response{status: status, headers: headers, body: body}} ->
           {:ok, status, headers, body}

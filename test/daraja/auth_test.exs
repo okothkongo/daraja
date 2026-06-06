@@ -3,6 +3,7 @@ defmodule Daraja.AuthTest do
 
   alias Daraja.{APIError, Client}
   alias Daraja.HTTPClient.Mock
+  alias Daraja.Test.TokenCacheHelper
 
   setup do
     Mock.reset()
@@ -98,7 +99,7 @@ defmodule Daraja.AuthTest do
 
   describe "get_token/1 with default-named cache" do
     setup do
-      start_supervised!(Daraja.TokenCache)
+      TokenCacheHelper.start!()
       :ok
     end
 
@@ -113,7 +114,7 @@ defmodule Daraja.AuthTest do
 
   describe "with_token/2" do
     setup do
-      start_supervised!(Daraja.TokenCache)
+      TokenCacheHelper.start!()
       :ok
     end
 
@@ -148,7 +149,7 @@ defmodule Daraja.AuthTest do
   describe "get_token/1 with config-named cache" do
     setup do
       Application.put_env(:daraja, :token_cache, :auth_test_cache)
-      start_supervised!({Daraja.TokenCache, name: :auth_test_cache})
+      TokenCacheHelper.start!(name: :auth_test_cache)
       on_exit(fn -> Application.delete_env(:daraja, :token_cache) end)
       :ok
     end

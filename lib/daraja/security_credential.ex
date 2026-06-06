@@ -23,9 +23,27 @@ defmodule Daraja.SecurityCredential do
   Pinning is skipped when the list is empty. In `:sandbox`, set
   `:enforce_security_credential_pins` to `false` to disable pinning during
   local development. Production always enforces when pins are configured.
+
+  ## Tuple credentials (`{password, pem}`)
+
+  Tuple inputs are encrypted on first use and cached in `:persistent_term`.
+  For production, pre-encrypt at deploy time and pass only the Base64 string.
+
+  Disable tuple credentials in production:
+
+      config :daraja,
+        environment: :production,
+        allow_tuple_security_credential: false
+
+  A one-time warning is logged when tuples are used (disable with
+  `:warn_tuple_security_credential: false`).
   """
 
-  @type encrypt_error :: :invalid_public_key | :encryption_failed | :untrusted_public_key
+  @type encrypt_error ::
+          :invalid_public_key
+          | :encryption_failed
+          | :untrusted_public_key
+          | :tuple_credentials_disabled
 
   @doc """
   Resolves a `security_credential` input to an encrypted Base64 string.
@@ -43,8 +61,16 @@ defmodule Daraja.SecurityCredential do
   def resolve(""), do: {:error, :invalid_format}
   def resolve(credential) when is_binary(credential), do: {:ok, credential}
 
-  def resolve({password, pem}) when is_binary(password) and is_binary(pem),
-    do: encrypt(password, pem)
+  def resolve({password, pem}) when is_binary(password) and is_binary(pem) do
+    cond do
+      tuple_credentials_disabled?() ->
+        {:error, :tuple_credentials_disabled}
+
+      true ->
+        warn_tuple_credential_once()
+        resolve_tuple(password, pem)
+    end
+  end
 
   def resolve(_), do: {:error, :invalid_format}
 
@@ -168,4 +194,55 @@ defmodule Daraja.SecurityCredential do
   end
 
   defp decode_public_key_entry(_), do: {:error, :invalid_public_key}
+
+  defp resolve_tuple(password, pem) do
+    cache_key = tuple_cache_key(password, pem)
+
+    case :persistent_term.get(cache_key, :unset) do
+      {:ok, credential} ->
+        {:ok, credential}
+
+      :unset ->
+        case encrypt(password, pem) do
+          {:ok, _} = ok ->
+            :persistent_term.put(cache_key, ok)
+            ok
+
+          {:error, _} = error ->
+            error
+        end
+    end
+  end
+
+  defp tuple_cache_key(password, pem) do
+    digest = :crypto.hash(:sha256, password <> "\0" <> pem)
+    {:daraja, :security_credential, digest}
+  end
+
+  defp tuple_credentials_disabled? do
+    Daraja.Config.get(:environment, :sandbox) == :production and
+      Daraja.Config.get(:allow_tuple_security_credential, true) == false
+  end
+
+  defp warn_tuple_credential_once do
+    if tuple_credential_warnings_enabled?() and
+         :persistent_term.get({:daraja, :tuple_security_credential_warning}, false) == false do
+      :persistent_term.put({:daraja, :tuple_security_credential_warning}, true)
+
+      require Logger
+
+      Logger.warning("""
+      [Daraja] Encrypting security credentials from a {password, pem} tuple on every request is slow.
+
+      Pre-encrypt at deploy time with Daraja.SecurityCredential.encrypt/2 and pass only the \
+      Base64 string, or set config :daraja, allow_tuple_security_credential: false in production.
+      """)
+    end
+
+    :ok
+  end
+
+  defp tuple_credential_warnings_enabled? do
+    Application.get_env(:daraja, :warn_tuple_security_credential, Mix.env() != :test)
+  end
 end

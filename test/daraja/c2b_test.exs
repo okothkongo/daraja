@@ -59,8 +59,6 @@ defmodule Daraja.C2BTest do
     {:ok, client: client}
   end
 
-
-
   describe "register_url/2 with valid params" do
     test "returns Success struct on happy path", %{client: client} do
       Mock.push_response({:ok, 200, [], @auth_success})
@@ -185,8 +183,6 @@ defmodule Daraja.C2BTest do
     end
   end
 
-
-
   describe "simulate/2 with valid params" do
     test "returns Success struct on happy path", %{client: client} do
       Mock.push_response({:ok, 200, [], @auth_success})
@@ -303,9 +299,6 @@ defmodule Daraja.C2BTest do
                Daraja.C2B.simulate(client, %{@valid_simulate_params | msisdn: "12345"})
     end
   end
-
-
-
 
   describe "Callback.from_map/2" do
     @validation_payload %{

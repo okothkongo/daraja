@@ -30,6 +30,12 @@ defmodule Daraja.TokenCache do
   effective token lifetime. When `expires_in` is shorter than `refresh_before`,
   refresh is scheduled immediately. `init/1` raises when `refresh_before >= ttl`.
 
+  ## Concurrent fetches
+
+  OAuth network I/O runs in `Task.Supervisor` workers — not inside the
+  GenServer mailbox — so cache misses for different credentials fetch in
+  parallel. Concurrent misses for the **same** key share one in-flight task.
+
   ## Crash and restart
 
   ETS tables are owned by the GenServer process. On crash and supervisor
@@ -56,6 +62,8 @@ defmodule Daraja.TokenCache do
 
   @default_ttl 3600
   @default_refresh_before 120
+  @default_task_supervisor Daraja.TokenCache.TaskSupervisor
+  @refresh_retry_delay_ms 30_000
 
   @doc """
   Evicts the cached token for `client`, canceling any scheduled refresh.
@@ -88,15 +96,11 @@ defmodule Daraja.TokenCache do
     key = cache_key(client)
 
     try do
-      case :ets.lookup(server, key) do
-        [{^key, {token, expires_at, _ttl}}] ->
-          if expires_at > System.monotonic_time(:second) do
-            {:ok, token}
-          else
-            GenServer.call(server, {:fetch_and_cache, client})
-          end
+      case lookup_valid_token(server, key) do
+        {:ok, token} ->
+          {:ok, token}
 
-        _ ->
+        :miss ->
           GenServer.call(server, {:fetch_and_cache, client})
       end
     rescue
@@ -118,7 +122,7 @@ defmodule Daraja.TokenCache do
   end
 
   def start_link(opts) do
-    opts = Keyword.take(opts, [:name, :ttl, :refresh_before])
+    opts = Keyword.take(opts, [:name, :ttl, :refresh_before, :task_supervisor])
     name = Keyword.get(opts, :name, __MODULE__)
     GenServer.start_link(__MODULE__, opts, name: name)
   end
@@ -128,6 +132,7 @@ defmodule Daraja.TokenCache do
     name = Keyword.get(opts, :name, __MODULE__)
     ttl = Keyword.get(opts, :ttl, @default_ttl)
     refresh_before = Keyword.get(opts, :refresh_before, @default_refresh_before)
+    task_supervisor = Keyword.get(opts, :task_supervisor, @default_task_supervisor)
 
     if refresh_before >= ttl do
       raise ArgumentError,
@@ -135,6 +140,7 @@ defmodule Daraja.TokenCache do
     end
 
     :ets.new(name, [:set, :protected, :named_table, read_concurrency: true])
+    Daraja.Runtime.register_token_cache(name)
 
     {:ok,
      %{
@@ -142,7 +148,9 @@ defmodule Daraja.TokenCache do
        ttl: ttl,
        refresh_before: refresh_before,
        timers: %{},
-       clients: %{}
+       clients: %{},
+       in_flight: %{},
+       task_supervisor: task_supervisor
      }}
   end
 
@@ -152,41 +160,56 @@ defmodule Daraja.TokenCache do
   end
 
   @impl GenServer
-  def handle_call({:fetch_and_cache, client}, _from, state) do
+  def handle_call({:fetch_and_cache, client}, from, state) do
     key = cache_key(client)
 
-    # Re-check under the GenServer lock: multiple callers that missed the fast
-    # path may be queued here; only the first should fetch from the network.
-    case :ets.lookup(state.table, key) do
-      [{^key, {token, expires_at, _ttl}}] ->
-        if expires_at > System.monotonic_time(:second) do
-          {:reply, {:ok, token}, state}
-        else
-          do_fetch_and_cache(client, state)
-        end
+    case lookup_valid_token(state.table, key) do
+      {:ok, token} ->
+        {:reply, {:ok, token}, state}
 
-      _ ->
-        do_fetch_and_cache(client, state)
+      :miss ->
+        state = store_client(state, key, client)
+
+        case Map.get(state.in_flight, key) do
+          {task_ref, waiters, :fetch} ->
+            {:noreply, put_in_flight(state, key, task_ref, [from | waiters], :fetch)}
+
+          nil ->
+            {state, task_ref} = start_fetch_task(state, key, client)
+            {:noreply, put_in_flight(state, key, task_ref, [from], :fetch)}
+        end
     end
   end
 
-  defp do_fetch_and_cache(client, state) do
-    key = cache_key(client)
+  @impl GenServer
+  def handle_info({ref, result}, state) when is_reference(ref) do
+    case pop_in_flight_by_ref(state, ref) do
+      {nil, state} ->
+        {:noreply, state}
 
-    case Daraja.Auth.fetch_token_info(client, state.ttl) do
-      {:ok, %{access_token: token, expires_in: ttl}} ->
-        expires_at = System.monotonic_time(:second) + ttl
-        :ets.insert(state.table, {key, {token, expires_at, ttl}})
+      {{key, waiters, kind}, state} ->
+        {replies, state} = apply_fetch_result(state, key, result, waiters, kind)
+        Enum.each(replies, fn {from, reply} -> GenServer.reply(from, reply) end)
+        {:noreply, state}
+    end
+  end
 
-        state =
-          state
-          |> store_client(key, client)
-          |> schedule_refresh(key, ttl)
+  @impl GenServer
+  def handle_info({:DOWN, ref, :process, _pid, _reason}, state) do
+    case pop_in_flight_by_ref(state, ref) do
+      {nil, state} ->
+        {:noreply, state}
 
-        {:reply, {:ok, token}, state}
+      {{_key, [], _kind}, state} ->
+        {:noreply, state}
 
-      error ->
-        {:reply, error, state}
+      {{key, waiters, :fetch}, state} ->
+        error = {:error, :http_error, :fetch_crashed}
+        Enum.each(waiters, &GenServer.reply(&1, error))
+        {:noreply, drop_in_flight(state, key)}
+
+      {{key, _waiters, :refresh}, state} ->
+        {:noreply, schedule_refresh_retry(state, key)}
     end
   end
 
@@ -194,29 +217,96 @@ defmodule Daraja.TokenCache do
   def handle_info({:refresh, key}, state) do
     case Map.fetch(state.clients, key) do
       {:ok, client} ->
-        refresh_token(client, key, state)
+        if Map.has_key?(state.in_flight, key) do
+          {:noreply, schedule_refresh_retry(state, key)}
+        else
+          {state, task_ref} = start_fetch_task(state, key, client)
+          {:noreply, put_in_flight(state, key, task_ref, [], :refresh)}
+        end
 
       :error ->
         {:noreply, state}
     end
   end
 
-  defp refresh_token(client, key, state) do
-    case Daraja.Auth.fetch_token_info(client, state.ttl) do
+  defp lookup_valid_token(table, key) do
+    case :ets.lookup(table, key) do
+      [{^key, {token, expires_at, _ttl}}] ->
+        if expires_at > System.monotonic_time(:second) do
+          {:ok, token}
+        else
+          :miss
+        end
+
+      _ ->
+        :miss
+    end
+  end
+
+  defp start_fetch_task(state, _key, client) do
+    ttl = state.ttl
+    task_supervisor = state.task_supervisor
+
+    task =
+      Task.Supervisor.async_nolink(task_supervisor, fn ->
+        Daraja.Auth.fetch_token_info(client, ttl)
+      end)
+
+    {state, task.ref}
+  end
+
+  defp put_in_flight(state, key, task_ref, waiters, kind) do
+    %{state | in_flight: Map.put(state.in_flight, key, {task_ref, waiters, kind})}
+  end
+
+  defp pop_in_flight_by_ref(state, ref) do
+    case Enum.find(state.in_flight, fn {_key, {task_ref, _waiters, _kind}} -> task_ref == ref end) do
+      {key, {^ref, waiters, kind}} ->
+        {{key, waiters, kind}, drop_in_flight(state, key)}
+
+      nil ->
+        {nil, state}
+    end
+  end
+
+  defp drop_in_flight(state, key) do
+    %{state | in_flight: Map.delete(state.in_flight, key)}
+  end
+
+  defp apply_fetch_result(state, key, result, waiters, kind) do
+    case result do
       {:ok, %{access_token: token, expires_in: ttl}} ->
         expires_at = System.monotonic_time(:second) + ttl
         :ets.insert(state.table, {key, {token, expires_at, ttl}})
 
-        # The timer that delivered this message has already fired, so
-        # cancel_timer returns false here — expected, not a bug.
-        existing = Map.get(state.timers, key)
-        if existing, do: Process.cancel_timer(existing)
+        state =
+          state
+          |> schedule_refresh(key, ttl)
+          |> drop_in_flight(key)
 
-        {:noreply, schedule_refresh(state, key, ttl)}
+        replies =
+          if kind == :fetch, do: Enum.map(waiters, &{&1, {:ok, token}}), else: []
 
-      _error ->
-        {:noreply, evict(state, key)}
+        {replies, state}
+
+      error ->
+        state =
+          case kind do
+            :refresh -> schedule_refresh_retry(state, key)
+            :fetch -> drop_in_flight(state, key)
+          end
+
+        replies = if kind == :fetch, do: Enum.map(waiters, &{&1, error}), else: []
+        {replies, state}
     end
+  end
+
+  defp schedule_refresh_retry(state, key) do
+    existing = Map.get(state.timers, key)
+    if existing, do: Process.cancel_timer(existing)
+
+    ref = Process.send_after(self(), {:refresh, key}, @refresh_retry_delay_ms)
+    %{state | timers: Map.put(state.timers, key, ref)}
   end
 
   defp evict(state, key) do
@@ -228,7 +318,8 @@ defmodule Daraja.TokenCache do
     %{
       state
       | timers: Map.delete(state.timers, key),
-        clients: Map.delete(state.clients, key)
+        clients: Map.delete(state.clients, key),
+        in_flight: Map.delete(state.in_flight, key)
     }
   end
 

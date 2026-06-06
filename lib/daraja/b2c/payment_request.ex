@@ -188,12 +188,10 @@ defmodule Daraja.B2C.PaymentRequest do
 
   defp apply_env_fallbacks(params) do
     Enum.reduce(@env_fallbacks, params, fn {field, env_key}, acc ->
-      env_value = env_value(field, env_key)
-
-      Map.update(acc, field, env_value, fn
-        nil -> env_value
-        value -> value
-      end)
+      case Map.get(acc, field) do
+        nil -> Map.put(acc, field, env_value(field, env_key))
+        _value -> acc
+      end
     end)
   end
 
