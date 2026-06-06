@@ -1,12 +1,34 @@
 defmodule Daraja.B2C.SecurityCredential do
   @moduledoc """
-  Utilities for building B2C security credentials.
+  Utilities for building B2C (and B2B) security credentials.
 
   Safaricom expects the initiator password encrypted with the portal-provided
   certificate/public key and Base64 encoded.
+
+  `resolve/1` is used by `PaymentRequest` modules; also callable directly.
   """
 
   @type encrypt_error :: :invalid_public_key | :encryption_failed
+
+  @doc """
+  Resolves a `security_credential` input to an encrypted Base64 string.
+
+  Accepts:
+  - A pre-encrypted Base64 string — returned as-is.
+  - A `{password, pem}` tuple — encrypts using `encrypt/2`.
+  - `nil` — returned as `{:ok, nil}` so the missing-field check in
+    `PaymentRequest.new/1` can report it normally.
+  - Any other value — returns `{:error, :invalid_format}`.
+  """
+  @spec resolve(String.t() | {String.t(), String.t()} | nil | term()) ::
+          {:ok, String.t() | nil} | {:error, encrypt_error() | :invalid_format}
+  def resolve(nil), do: {:ok, nil}
+  def resolve(credential) when is_binary(credential), do: {:ok, credential}
+
+  def resolve({password, pem}) when is_binary(password) and is_binary(pem),
+    do: encrypt(password, pem)
+
+  def resolve(_), do: {:error, :invalid_format}
 
   @doc """
   Encrypts a plaintext initiator password using the provided PEM certificate or

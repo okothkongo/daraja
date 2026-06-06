@@ -41,7 +41,7 @@ defmodule Daraja.B2B do
 
   Required params:
   - `initiator`
-  - `security_credential`
+  - `security_credential` — pre-encrypted Base64 string or `{password, pem}` tuple (auto-encrypted)
   - `command_id`
   - `sender_identifier_type`
   - `receiver_identifier_type`

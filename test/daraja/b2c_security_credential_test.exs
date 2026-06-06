@@ -107,6 +107,44 @@ defmodule Daraja.B2CSecurityCredentialTest do
     assert {:error, :invalid_public_key} = SecurityCredential.encrypt("password", bad_pem)
   end
 
+  describe "resolve/1" do
+    test "passes a binary credential through unchanged" do
+      assert {:ok, "already-encrypted"} = SecurityCredential.resolve("already-encrypted")
+    end
+
+    test "passes nil through as {:ok, nil}" do
+      assert {:ok, nil} = SecurityCredential.resolve(nil)
+    end
+
+    test "encrypts a {password, pem} tuple" do
+      {_private_key, public_key} = rsa_keypair()
+
+      public_pem =
+        :public_key.pem_encode([:public_key.pem_entry_encode(:RSAPublicKey, public_key)])
+
+      assert {:ok, credential} = SecurityCredential.resolve({"password", public_pem})
+      assert is_binary(credential)
+      assert credential != "password"
+    end
+
+    test "returns :invalid_public_key when pem in tuple is invalid" do
+      assert {:error, :invalid_public_key} =
+               SecurityCredential.resolve({"password", "not-a-pem"})
+    end
+
+    test "returns :invalid_format for an integer" do
+      assert {:error, :invalid_format} = SecurityCredential.resolve(12_345)
+    end
+
+    test "returns :invalid_format for a bare atom" do
+      assert {:error, :invalid_format} = SecurityCredential.resolve(:not_a_credential)
+    end
+
+    test "returns :invalid_format for a 3-tuple" do
+      assert {:error, :invalid_format} = SecurityCredential.resolve({"a", "b", "c"})
+    end
+  end
+
   test "returns encryption_failed when the password is too large for the key" do
     {_private_key, public_key} = rsa_keypair(512)
 
