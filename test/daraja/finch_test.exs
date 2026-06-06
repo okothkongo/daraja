@@ -30,6 +30,26 @@ defmodule Daraja.HTTPClient.FinchTest do
     assert {:error, :no_response_queued} = Mock.request(:get, "http://example.com", [], "")
   end
 
+  test "request/4 raises when the configured Finch pool is not running" do
+    Application.put_env(:daraja, :finch_name, Daraja.FinchMissing)
+    on_exit(fn -> Application.delete_env(:daraja, :finch_name) end)
+
+    assert_raise RuntimeError, ~r/is not running/, fn ->
+      FinchClient.request(:get, "http://127.0.0.1/", [], "")
+    end
+  end
+
+  test "request/4 uses a custom :finch_name pool" do
+    Application.put_env(:daraja, :finch_name, Daraja.FinchCustom)
+    on_exit(fn -> Application.delete_env(:daraja, :finch_name) end)
+    start_supervised!({Finch, name: Daraja.FinchCustom})
+
+    port = one_shot("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nhi")
+
+    assert {:ok, 200, _headers, "hi"} =
+             FinchClient.request(:get, "http://127.0.0.1:#{port}/", [], "")
+  end
+
   # Starts a one-shot TCP server that accepts a single connection, reads the
   # request, writes back `response`, and shuts down. Returns the bound port.
   defp one_shot(response) do

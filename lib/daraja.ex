@@ -154,8 +154,40 @@ defmodule Daraja do
       config :daraja, :http_client, MyApp.CustomHTTPClient
   """
 
+  @http_client_callback_arity 4
+
   @doc false
-  def http_client do
-    Application.get_env(:daraja, :http_client, Daraja.HTTPClient.Finch)
+  def http_client(ensure_loaded \\ &Code.ensure_loaded?/1) do
+    client = Application.get_env(:daraja, :http_client, Daraja.HTTPClient.Finch)
+
+    cond do
+      is_nil(client) ->
+        raise "`:http_client` is configured as nil. Set it to a module that implements Daraja.HTTPClient."
+
+      client == Daraja.HTTPClient.Finch and not ensure_loaded.(Finch) ->
+        raise """
+        Daraja.HTTPClient.Finch is not available. Add {:finch, "~> 0.18"} to \
+        your application's dependencies, or configure a custom HTTP client:
+
+            config :daraja, :http_client, MyApp.CustomHTTPClient
+        """
+
+      not ensure_loaded.(client) ->
+        raise """
+        HTTP client #{inspect(client)} is not available. \
+        Check that the module name is spelled correctly and its containing \
+        application is in your deps.
+        """
+
+      not function_exported?(client, :request, @http_client_callback_arity) ->
+        raise """
+        #{inspect(client)} does not implement the Daraja.HTTPClient behaviour \
+        (missing request/#{@http_client_callback_arity}). \
+        Ensure the module calls `@behaviour Daraja.HTTPClient`.
+        """
+
+      true ->
+        client
+    end
   end
 end

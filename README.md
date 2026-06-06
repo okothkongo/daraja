@@ -192,6 +192,20 @@ children = [
 ]
 ```
 
+The pool name defaults to `Daraja.Finch`. To use an existing Finch pool under a
+different name, set the `:finch_name` config key and start the pool under that name:
+
+```elixir
+# config/config.exs
+config :daraja, :finch_name, MyApp.Finch
+```
+
+```elixir
+children = [
+  {Finch, name: MyApp.Finch}
+]
+```
+
 Run `mix deps.get` to install.
 
 ## Configuration
@@ -257,6 +271,11 @@ Implement the `Daraja.HTTPClient` behaviour and configure it:
 ```elixir
 config :daraja, :http_client, MyApp.CustomHTTPClient
 ```
+
+**Note:** If you configure a custom HTTP client, you can remove `{:finch, "~> 0.18"}`
+from your `mix.exs` and drop the Finch pool from your supervision tree. Finch is an
+optional dependency; leaving the default `Daraja.HTTPClient.Finch` configured while
+omitting Finch from deps will raise at runtime with a clear message.
 
 ## Documentation
 
