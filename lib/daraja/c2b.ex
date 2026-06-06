@@ -93,7 +93,7 @@ defmodule Daraja.C2B do
   end
 
   defp do_register_url(%Client{} = client, %RegisterUrlRequest{} = request) do
-    with {:ok, token} <- Daraja.Auth.fetch_token(client) do
+    with {:ok, token} <- Daraja.Auth.get_token(client) do
       body =
         JSON.encode!(%{
           "ShortCode" => request.short_code,
@@ -109,7 +109,7 @@ defmodule Daraja.C2B do
   end
 
   defp do_simulate(%Client{} = client, %SimulateRequest{} = request) do
-    with {:ok, token} <- Daraja.Auth.fetch_token(client) do
+    with {:ok, token} <- Daraja.Auth.get_token(client) do
       body =
         JSON.encode!(%{
           "ShortCode" => request.short_code,
