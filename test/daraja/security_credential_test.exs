@@ -5,6 +5,17 @@ defmodule Daraja.SecurityCredentialTest do
 
   @cert_pem File.read!("test/support/fixtures/security_credential_cert.pem")
   @key_pem File.read!("test/support/fixtures/security_credential_key.pem")
+  @fixture_pin "yGsAE85gJh3satQK/3DRqZCjovsVGOqmUQ22wXvoIko"
+
+  setup do
+    on_exit(fn ->
+      Application.delete_env(:daraja, :security_credential_pins)
+      Application.delete_env(:daraja, :enforce_security_credential_pins)
+      Application.delete_env(:daraja, :environment)
+    end)
+
+    :ok
+  end
 
   defp rsa_keypair(bits \\ 2048) do
     private_key = :public_key.generate_key({:rsa, bits, 65_537})
@@ -142,6 +153,58 @@ defmodule Daraja.SecurityCredentialTest do
 
     test "returns :invalid_format for a 3-tuple" do
       assert {:error, :invalid_format} = SecurityCredential.resolve({"a", "b", "c"})
+    end
+  end
+
+  test "spki_fingerprint/1 returns Base64 SHA-256 of the SPKI" do
+    assert {:ok, @fixture_pin} = SecurityCredential.spki_fingerprint(@cert_pem)
+  end
+
+  describe "certificate pinning" do
+    test "accepts PEM when fingerprint is pinned" do
+      Application.put_env(:daraja, :security_credential_pins, [@fixture_pin])
+
+      assert {:ok, _} = SecurityCredential.encrypt("password", @cert_pem)
+    end
+
+    test "rejects PEM when fingerprint is not pinned" do
+      Application.put_env(:daraja, :security_credential_pins, ["known-but-different-pin"])
+
+      assert {:error, :untrusted_public_key} =
+               SecurityCredential.encrypt("password", @cert_pem)
+    end
+
+    test "skips pinning when no pins are configured" do
+      {_private_key, public_key} = rsa_keypair()
+
+      public_pem =
+        :public_key.pem_encode([:public_key.pem_entry_encode(:RSAPublicKey, public_key)])
+
+      assert {:ok, _} = SecurityCredential.encrypt("password", public_pem)
+    end
+
+    test "skips pinning in sandbox when enforce_security_credential_pins is false" do
+      Application.put_env(:daraja, :environment, :sandbox)
+      Application.put_env(:daraja, :enforce_security_credential_pins, false)
+      Application.put_env(:daraja, :security_credential_pins, ["known-but-different-pin"])
+
+      assert {:ok, _} = SecurityCredential.encrypt("password", @cert_pem)
+    end
+
+    test "enforces pinning in production even when enforce flag is false" do
+      Application.put_env(:daraja, :environment, :production)
+      Application.put_env(:daraja, :enforce_security_credential_pins, false)
+      Application.put_env(:daraja, :security_credential_pins, ["known-but-different-pin"])
+
+      assert {:error, :untrusted_public_key} =
+               SecurityCredential.encrypt("password", @cert_pem)
+    end
+
+    test "supports environment-specific pin lists" do
+      Application.put_env(:daraja, :environment, :sandbox)
+      Application.put_env(:daraja, :security_credential_pins, sandbox: [@fixture_pin])
+
+      assert {:ok, _} = SecurityCredential.encrypt("password", @cert_pem)
     end
   end
 
