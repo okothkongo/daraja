@@ -18,6 +18,13 @@ if Code.ensure_loaded?(Finch) do
     Configure Daraja to use this adapter (this is the default, so the config is optional):
 
         config :daraja, :http_client, Daraja.HTTPClient.Finch
+
+    ## TLS
+
+    Requests use Finch's default SSL settings, which validate server certificates
+    against the operating system's CA bundle. For certificate pinning or custom
+    trust stores, implement `Daraja.HTTPClient` and configure `:http_client` to
+    point at your adapter.
     """
 
     @behaviour Daraja.HTTPClient

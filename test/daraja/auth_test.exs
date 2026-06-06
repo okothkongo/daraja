@@ -1,7 +1,7 @@
 defmodule Daraja.AuthTest do
   use ExUnit.Case, async: false
 
-  alias Daraja.Client
+  alias Daraja.{APIError, Client}
   alias Daraja.HTTPClient.Mock
 
   setup do
@@ -24,12 +24,15 @@ defmodule Daraja.AuthTest do
 
   test "returns auth_failed on non-200 response", %{client: client} do
     Mock.push_response({:ok, 401, [], "Unauthorized"})
-    assert {:error, :auth_failed, "Unauthorized"} = Daraja.Auth.fetch_token(client)
+
+    assert {:error, :auth_failed,
+            %APIError{status: 401, error_message: "non-JSON error response"}} =
+             Daraja.Auth.fetch_token(client)
   end
 
   test "returns auth_failed when JSON is missing access_token", %{client: client} do
     Mock.push_response({:ok, 200, [], ~s({"foo":"bar"})})
-    assert {:error, :auth_failed, _} = Daraja.Auth.fetch_token(client)
+    assert {:error, :auth_failed, %APIError{}} = Daraja.Auth.fetch_token(client)
   end
 
   test "returns http_error on transport failure", %{client: client} do

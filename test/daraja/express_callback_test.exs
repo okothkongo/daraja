@@ -58,6 +58,9 @@ defmodule Daraja.ExpressCallbackTest do
   test "parse/1 returns ok for valid payloads and errors for invalid shapes" do
     assert {:ok, %Callback.Result{result_code: 0}} = Callback.parse(@successful_payload)
     assert {:error, :invalid_callback, _} = Callback.parse(%{})
+
+    assert {:error, :invalid_callback, "missing CheckoutRequestID"} =
+             Callback.parse(%{"Body" => %{"stkCallback" => %{}}})
   end
 
   test "accept/0 returns the success acknowledgement map" do

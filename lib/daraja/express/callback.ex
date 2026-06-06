@@ -84,7 +84,11 @@ defmodule Daraja.Express.Callback do
   """
   @spec parse(map()) :: {:ok, Result.t()} | {:error, :invalid_callback, String.t()}
   def parse(%{"Body" => %{"stkCallback" => stk}} = map) when is_map(stk) do
-    {:ok, from_map(map)}
+    with :ok <- Daraja.Callback.Validate.present_string(stk["CheckoutRequestID"]) do
+      {:ok, from_map(map)}
+    else
+      {:error, _} -> {:error, :invalid_callback, "missing CheckoutRequestID"}
+    end
   end
 
   def parse(_), do: {:error, :invalid_callback, "missing Body.stkCallback"}

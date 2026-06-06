@@ -40,6 +40,14 @@ defmodule Daraja.C2B.SimulateRequest do
         {:error, :invalid_request,
          [{:command_id, "must be \"CustomerPayBillOnline\" or \"CustomerBuyGoodsOnline\""}]}
 
+      match?({:error, _}, Daraja.RequestValidation.validate_amount(params[:amount])) ->
+        {:error, :invalid_request,
+         [elem(Daraja.RequestValidation.validate_amount(params[:amount]), 1)]}
+
+      match?({:error, _}, Daraja.RequestValidation.validate_msisdn(params[:msisdn], :msisdn)) ->
+        {:error, :invalid_request,
+         [elem(Daraja.RequestValidation.validate_msisdn(params[:msisdn], :msisdn), 1)]}
+
       true ->
         {:ok,
          %__MODULE__{

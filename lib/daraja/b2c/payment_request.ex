@@ -140,6 +140,10 @@ defmodule Daraja.B2C.PaymentRequest do
               "must be \"SalaryPayment\", \"BusinessPayment\" or \"PromotionPayment\""}
            ]}
 
+        match?({:error, _}, Daraja.RequestValidation.validate_amount(params[:amount])) ->
+          {:error, :invalid_request,
+           [elem(Daraja.RequestValidation.validate_amount(params[:amount]), 1)]}
+
         true ->
           {:ok,
            %__MODULE__{

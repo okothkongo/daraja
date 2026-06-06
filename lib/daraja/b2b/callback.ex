@@ -70,7 +70,11 @@ defmodule Daraja.B2B.Callback do
   """
   @spec parse(map()) :: {:ok, Result.t()} | {:error, :invalid_callback, String.t()}
   def parse(%{"Result" => result_map} = map) when is_map(result_map) do
-    {:ok, from_map(map)}
+    with :ok <- Daraja.Callback.Validate.present_string(result_map["OriginatorConversationID"]) do
+      {:ok, from_map(map)}
+    else
+      {:error, _} -> {:error, :invalid_callback, "missing OriginatorConversationID"}
+    end
   end
 
   def parse(_), do: {:error, :invalid_callback, "missing Result"}

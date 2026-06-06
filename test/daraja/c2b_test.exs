@@ -2,7 +2,7 @@ defmodule Daraja.C2BTest do
   use ExUnit.Case, async: false
 
   alias Daraja.C2B.{Callback, RegisterUrlRequest, Response, SimulateRequest}
-  alias Daraja.Client
+  alias Daraja.{APIError, Client}
   alias Daraja.HTTPClient.Mock
 
   @auth_success ~s({"access_token":"tok123","expires_in":"3600"})
@@ -121,7 +121,7 @@ defmodule Daraja.C2BTest do
       Mock.push_response({:ok, 200, [], @auth_success})
       Mock.push_response({:ok, 200, [], "not json <<<"})
 
-      assert {:error, :request_failed, "not json <<<"} =
+      assert {:error, :request_failed, %APIError{error_message: "non-JSON error response"}} =
                Daraja.C2B.register_url(client, @valid_register_params)
     end
 
@@ -143,7 +143,7 @@ defmodule Daraja.C2BTest do
     test "returns auth_failed without making API call", %{client: client} do
       Mock.push_response({:ok, 401, [], "Unauthorized"})
 
-      assert {:error, :auth_failed, "Unauthorized"} =
+      assert {:error, :auth_failed, %APIError{status: 401}} =
                Daraja.C2B.register_url(client, @valid_register_params)
     end
   end
@@ -255,7 +255,7 @@ defmodule Daraja.C2BTest do
     test "returns auth_failed without making API call", %{client: client} do
       Mock.push_response({:ok, 401, [], "Unauthorized"})
 
-      assert {:error, :auth_failed, "Unauthorized"} =
+      assert {:error, :auth_failed, %APIError{status: 401}} =
                Daraja.C2B.simulate(client, @valid_simulate_params)
     end
   end
@@ -281,6 +281,16 @@ defmodule Daraja.C2BTest do
                })
 
       assert msg =~ "CustomerPayBillOnline"
+    end
+
+    test "returns invalid_request for non-positive amount", %{client: client} do
+      assert {:error, :invalid_request, [{:amount, _}]} =
+               Daraja.C2B.simulate(client, %{@valid_simulate_params | amount: 0})
+    end
+
+    test "returns invalid_request for invalid msisdn", %{client: client} do
+      assert {:error, :invalid_request, [{:msisdn, _}]} =
+               Daraja.C2B.simulate(client, %{@valid_simulate_params | msisdn: "0712345678"})
     end
   end
 
@@ -321,20 +331,41 @@ defmodule Daraja.C2BTest do
       assert result.trans_id == "RKL51ZDR4F"
       assert result.org_account_balance == "25.00"
     end
+
+    test "from_validation_map/1 always returns Validation regardless of OrgAccountBalance" do
+      assert %Callback.Validation{org_account_balance: "25.00"} =
+               Callback.from_validation_map(@confirmation_payload)
+    end
+
+    test "from_confirmation_map/1 always returns Confirmation regardless of OrgAccountBalance" do
+      assert %Callback.Confirmation{org_account_balance: ""} =
+               Callback.from_confirmation_map(@validation_payload)
+    end
   end
 
   describe "Callback.parse/1" do
+    @valid_c2b_payload %{
+      "TransID" => "RKL51ZDR4F",
+      "TransAmount" => "5.00",
+      "BusinessShortCode" => "600966",
+      "MSISDN" => "254700000000"
+    }
+
     test "returns ok for valid C2B payloads and errors for invalid shapes" do
-      assert {:ok, %Callback.Validation{}} =
-               Callback.parse(%{
-                 "TransID" => "RKL51ZDR4F",
-                 "TransAmount" => "5.00",
-                 "BusinessShortCode" => "600966",
-                 "MSISDN" => "254700000000"
-               })
+      assert {:ok, %Callback.Validation{}} = Callback.parse(@valid_c2b_payload)
 
       assert {:error, :invalid_callback, reason} = Callback.parse(%{})
       assert reason =~ "TransID"
+    end
+
+    test "parse_validation/1 returns Validation from the validation route" do
+      assert {:ok, %Callback.Validation{trans_id: "RKL51ZDR4F"}} =
+               Callback.parse_validation(@valid_c2b_payload)
+    end
+
+    test "parse_confirmation/1 returns Confirmation from the confirmation route" do
+      assert {:ok, %Callback.Confirmation{trans_id: "RKL51ZDR4F"}} =
+               Callback.parse_confirmation(@valid_c2b_payload)
     end
 
     test "kind/1 distinguishes validation and confirmation structs" do

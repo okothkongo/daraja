@@ -2,7 +2,7 @@ defmodule Daraja.B2CTest do
   use ExUnit.Case, async: false
 
   alias Daraja.B2C.{PaymentRequest, Response}
-  alias Daraja.Client
+  alias Daraja.{APIError, Client}
   alias Daraja.HTTPClient.Mock
 
   @cert_pem File.read!("test/support/fixtures/security_credential_cert.pem")
@@ -96,7 +96,7 @@ defmodule Daraja.B2CTest do
       Mock.push_response({:ok, 200, [], @auth_success})
       Mock.push_response({:ok, 200, [], "not json <<<"})
 
-      assert {:error, :request_failed, "not json <<<"} =
+      assert {:error, :request_failed, %APIError{error_message: "non-JSON error response"}} =
                Daraja.B2C.payment(client, @valid_params)
     end
 
@@ -163,7 +163,9 @@ defmodule Daraja.B2CTest do
   describe "payment/2 auth failure" do
     test "returns auth_failed without making API call", %{client: client} do
       Mock.push_response({:ok, 401, [], "Unauthorized"})
-      assert {:error, :auth_failed, "Unauthorized"} = Daraja.B2C.payment(client, @valid_params)
+
+      assert {:error, :auth_failed, %APIError{status: 401}} =
+               Daraja.B2C.payment(client, @valid_params)
     end
 
     test "invalidates cache and retries after payment 401", %{client: client} do
@@ -189,6 +191,11 @@ defmodule Daraja.B2CTest do
 
       assert {:error, :invalid_request, [{:queue_timeout_url, _}]} =
                Daraja.B2C.payment(client, params)
+    end
+
+    test "returns invalid_request for non-positive amount", %{client: client} do
+      assert {:error, :invalid_request, [{:amount, _}]} =
+               Daraja.B2C.payment(client, %{@valid_params | amount: "100"})
     end
 
     test "returns invalid_request when a required field is missing", %{client: client} do

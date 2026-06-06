@@ -2,7 +2,7 @@ defmodule Daraja.B2BTest do
   use ExUnit.Case, async: false
 
   alias Daraja.B2B.{Callback, PaymentRequest, Response}
-  alias Daraja.Client
+  alias Daraja.{APIError, Client}
   alias Daraja.HTTPClient.Mock
 
   @cert_pem File.read!("test/support/fixtures/security_credential_cert.pem")
@@ -138,7 +138,7 @@ defmodule Daraja.B2BTest do
       Mock.push_response({:ok, 200, [], @auth_success})
       Mock.push_response({:ok, 200, [], "not json <<<"})
 
-      assert {:error, :request_failed, "not json <<<"} =
+      assert {:error, :request_failed, %APIError{error_message: "non-JSON error response"}} =
                Daraja.B2B.request(client, @valid_params)
     end
 
@@ -205,7 +205,9 @@ defmodule Daraja.B2BTest do
   describe "request/2 auth failure" do
     test "returns auth_failed without making API call", %{client: client} do
       Mock.push_response({:ok, 401, [], "Unauthorized"})
-      assert {:error, :auth_failed, "Unauthorized"} = Daraja.B2B.request(client, @valid_params)
+
+      assert {:error, :auth_failed, %APIError{status: 401}} =
+               Daraja.B2B.request(client, @valid_params)
     end
   end
 
@@ -215,6 +217,11 @@ defmodule Daraja.B2BTest do
                Daraja.B2B.request(client, Map.delete(@valid_params, :initiator))
 
       assert :initiator in missing
+    end
+
+    test "returns invalid_request for non-positive amount", %{client: client} do
+      assert {:error, :invalid_request, [{:amount, _}]} =
+               Daraja.B2B.request(client, %{@valid_params | amount: -1})
     end
 
     test "returns invalid_request when command_id is invalid", %{client: client} do
@@ -353,6 +360,9 @@ defmodule Daraja.B2BTest do
     test "parse/1 returns ok for valid payloads and errors for invalid shapes" do
       assert {:ok, %Callback.Result{}} = Callback.parse(@successful_callback_payload)
       assert {:error, :invalid_callback, _} = Callback.parse(%{})
+
+      assert {:error, :invalid_callback, "missing OriginatorConversationID"} =
+               Callback.parse(%{"Result" => %{}})
     end
 
     test "sets reference_item to nil when ReferenceData is absent" do

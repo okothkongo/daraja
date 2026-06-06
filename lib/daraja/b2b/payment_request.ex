@@ -165,6 +165,10 @@ defmodule Daraja.B2B.PaymentRequest do
         params[:receiver_identifier_type] not in @valid_identifier_types ->
           {:error, :invalid_request, [{:receiver_identifier_type, "must be 2 or 4"}]}
 
+        match?({:error, _}, Daraja.RequestValidation.validate_amount(params[:amount])) ->
+          {:error, :invalid_request,
+           [elem(Daraja.RequestValidation.validate_amount(params[:amount]), 1)]}
+
         true ->
           {:ok,
            %__MODULE__{

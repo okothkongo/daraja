@@ -46,9 +46,9 @@ defmodule Daraja.C2B do
   @type result ::
           {:ok, Response.Success.t()}
           | {:error, :invalid_request, list()}
-          | {:error, :auth_failed, term()}
-          | {:error, :http_error, term()}
-          | {:error, :request_failed, Response.Error.t()}
+          | {:error, :auth_failed, Daraja.APIError.t()}
+          | {:error, :http_error, Daraja.APIError.t() | term()}
+          | {:error, :request_failed, Response.Error.t() | Daraja.APIError.t()}
 
   @doc """
   Registers callback URLs for C2B payment notifications.
@@ -140,7 +140,7 @@ defmodule Daraja.C2B do
   defp parse_response(body) do
     case JSON.decode(body) do
       {:ok, map} -> map |> Response.from_map() |> wrap_response()
-      {:error, _} -> {:error, :request_failed, body}
+      {:error, _} -> {:error, :request_failed, Daraja.APIError.from_body(body)}
     end
   end
 

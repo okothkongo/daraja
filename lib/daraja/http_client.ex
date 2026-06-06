@@ -13,6 +13,13 @@ defmodule Daraja.HTTPClient do
   Configure the adapter in your application:
 
       config :daraja, :http_client, MyApp.CustomHTTPClient
+
+  ## TLS
+
+  The default Finch adapter verifies Safaricom endpoints using the host OS
+  trust store (standard CA validation). Certificate pinning is not built in;
+  use a custom `Daraja.HTTPClient` implementation when your deployment requires
+  pinned certificates or other TLS hardening.
   """
 
   @type status() :: 100..599

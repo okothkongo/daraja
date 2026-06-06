@@ -90,6 +90,9 @@ defmodule Daraja.B2CCallbackTest do
 
     assert {:ok, %Callback.Result{}} = Callback.parse(@successful_payload)
     assert {:error, :invalid_callback, _} = Callback.parse(%{})
+
+    assert {:error, :invalid_callback, "missing OriginatorConversationID"} =
+             Callback.parse(%{"Result" => %{}})
   end
 
   test "sets reference_item to nil when ReferenceData is absent" do

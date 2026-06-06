@@ -1,7 +1,7 @@
 defmodule Daraja.ExpressTest do
   use ExUnit.Case, async: false
 
-  alias Daraja.Client
+  alias Daraja.{APIError, Client}
   alias Daraja.Express.{Request, Response}
   alias Daraja.HTTPClient.Mock
 
@@ -82,7 +82,7 @@ defmodule Daraja.ExpressTest do
       Mock.push_response({:ok, 200, [], @auth_success})
       Mock.push_response({:ok, 200, [], "not json <<<"})
 
-      assert {:error, :request_failed, "not json <<<"} =
+      assert {:error, :request_failed, %APIError{error_message: "non-JSON error response"}} =
                Daraja.Express.request(client, @valid_params)
     end
 
@@ -99,7 +99,7 @@ defmodule Daraja.ExpressTest do
     test "returns auth_failed without making STK push call", %{client: client} do
       Mock.push_response({:ok, 401, [], "Unauthorized"})
 
-      assert {:error, :auth_failed, "Unauthorized"} =
+      assert {:error, :auth_failed, %APIError{status: 401}} =
                Daraja.Express.request(client, @valid_params)
     end
 
@@ -109,7 +109,7 @@ defmodule Daraja.ExpressTest do
       Mock.push_response({:ok, 200, [], @auth_success})
       Mock.push_response({:ok, 401, [], "Unauthorized"})
 
-      assert {:error, :auth_failed, "Unauthorized"} =
+      assert {:error, :auth_failed, %APIError{status: 401}} =
                Daraja.Express.request(client, @valid_params)
     end
   end
@@ -119,7 +119,8 @@ defmodule Daraja.ExpressTest do
       Mock.push_response({:ok, 200, [], @auth_success})
       Mock.push_response({:ok, 502, [], "<html>Bad Gateway</html>"})
 
-      assert {:error, :http_error, {502, "<html>Bad Gateway</html>"}} =
+      assert {:error, :http_error,
+              %APIError{status: 502, error_message: "non-JSON error response"}} =
                Daraja.Express.request(client, @valid_params)
     end
   end
@@ -143,6 +144,34 @@ defmodule Daraja.ExpressTest do
     test "tolerates string keys that are not known atoms", %{client: client} do
       assert {:error, :invalid_request, _missing} =
                Daraja.Express.request(client, %{"definitely_not_an_atom_zzz" => 1})
+    end
+
+    test "returns invalid_request for non-positive amount", %{client: client} do
+      assert {:error, :invalid_request, [{:amount, _}]} =
+               Daraja.Express.request(client, %{@valid_params | amount: 0})
+    end
+
+    test "returns invalid_request for invalid phone number", %{client: client} do
+      assert {:error, :invalid_request, [{:phone_number, _}]} =
+               Daraja.Express.request(client, %{@valid_params | phone_number: "0712345678"})
+    end
+
+    test "returns invalid_request when account_reference exceeds 12 characters", %{
+      client: client
+    } do
+      assert {:error, :invalid_request, [{:account_reference, _}]} =
+               Daraja.Express.request(client, %{
+                 @valid_params
+                 | account_reference: "this-is-too-long"
+               })
+    end
+
+    test "returns invalid_request for unknown transaction_type", %{client: client} do
+      assert {:error, :invalid_request, [{:transaction_type, _}]} =
+               Daraja.Express.request(
+                 client,
+                 Map.put(@valid_params, :transaction_type, "InvalidType")
+               )
     end
   end
 

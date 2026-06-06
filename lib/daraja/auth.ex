@@ -31,7 +31,7 @@ defmodule Daraja.Auth do
   default `Daraja.TokenCache`.
   """
 
-  alias Daraja.Client
+  alias Daraja.{APIError, Client}
 
   @auth_url "/oauth/v1/generate?grant_type=client_credentials"
   @default_ttl 3600
@@ -52,8 +52,8 @@ defmodule Daraja.Auth do
   ## Returns
 
     * `{:ok, token}` — a valid access token string.
-    * `{:error, :auth_failed, body}` — credentials were rejected or the
-      response body could not be parsed.
+    * `{:error, :auth_failed, %Daraja.APIError{}}` — credentials were rejected or
+      the response body could not be parsed.
     * `{:error, :http_error, reason}` — a network or transport-level failure.
   """
   @spec get_token(Client.t()) ::
@@ -127,8 +127,8 @@ defmodule Daraja.Auth do
   ## Returns
 
     * `{:ok, token}` — a valid access token string.
-    * `{:error, :auth_failed, body}` — the request completed but credentials
-      were rejected or the response body could not be parsed.
+    * `{:error, :auth_failed, %Daraja.APIError{}}` — the request completed but
+      credentials were rejected or the response body could not be parsed.
     * `{:error, :http_error, reason}` — a network or transport-level failure.
   """
   @spec fetch_token(Client.t()) ::
@@ -149,9 +149,14 @@ defmodule Daraja.Auth do
     headers = [{"Authorization", "Basic " <> credentials}]
 
     case Daraja.http_client().request(:get, url, headers, "") do
-      {:ok, 200, _headers, body} -> decode_body(body, default_ttl)
-      {:ok, _status, _headers, body} -> {:error, :auth_failed, body}
-      {:error, reason} -> {:error, :http_error, reason}
+      {:ok, 200, _headers, body} ->
+        decode_body(body, default_ttl)
+
+      {:ok, status, _headers, body} ->
+        {:error, :auth_failed, APIError.from_body(body, status: status)}
+
+      {:error, reason} ->
+        {:error, :http_error, reason}
     end
   end
 
@@ -161,7 +166,7 @@ defmodule Daraja.Auth do
         {:ok, %{access_token: token, expires_in: parse_expires_in(map, default_ttl)}}
 
       _ ->
-        {:error, :auth_failed, body}
+        {:error, :auth_failed, APIError.from_body(body)}
     end
   end
 

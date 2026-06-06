@@ -31,9 +31,9 @@ defmodule Daraja.B2C do
   @type result ::
           {:ok, Response.Success.t()}
           | {:error, :invalid_request, list()}
-          | {:error, :auth_failed, term()}
-          | {:error, :http_error, term()}
-          | {:error, :request_failed, Response.Error.t() | binary()}
+          | {:error, :auth_failed, Daraja.APIError.t()}
+          | {:error, :http_error, Daraja.APIError.t() | term()}
+          | {:error, :request_failed, Response.Error.t() | Daraja.APIError.t()}
 
   @doc """
   Sends a B2C payment request.
@@ -102,7 +102,7 @@ defmodule Daraja.B2C do
   defp parse_response(body) do
     case JSON.decode(body) do
       {:ok, map} -> map |> Response.from_map() |> wrap_response()
-      {:error, _} -> {:error, :request_failed, body}
+      {:error, _} -> {:error, :request_failed, Daraja.APIError.from_body(body)}
     end
   end
 
