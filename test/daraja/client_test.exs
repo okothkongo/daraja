@@ -90,6 +90,34 @@ defmodule Daraja.ClientTest do
     end
   end
 
+  describe "Inspect" do
+    test "redacts consumer_secret and passkey" do
+      client =
+        Client.new(
+          consumer_key: "my_consumer_key",
+          consumer_secret: "my_consumer_secret",
+          passkey: "my_passkey"
+        )
+
+      inspected = inspect(client)
+
+      assert inspected =~ "my_consumer_key"
+      refute inspected =~ "my_consumer_secret"
+      refute inspected =~ "my_passkey"
+      assert inspected =~ "consumer_secret: \"[REDACTED]\""
+      assert inspected =~ "passkey: \"[REDACTED]\""
+    end
+
+    test "shows nil passkey without redaction placeholder" do
+      client = Client.new(consumer_key: "k", consumer_secret: "s")
+
+      inspected = inspect(client)
+
+      assert inspected =~ "passkey: nil"
+      assert inspected =~ "consumer_secret: \"[REDACTED]\""
+    end
+  end
+
   describe "base_url/1" do
     test "returns the sandbox URL for :sandbox" do
       client = Client.new(consumer_key: "k", consumer_secret: "s", environment: :sandbox)

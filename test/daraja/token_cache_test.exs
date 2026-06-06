@@ -156,7 +156,7 @@ defmodule Daraja.TokenCacheTest do
     assert [{^key, _}] = :ets.lookup(name, key)
 
     Mock.push_response({:ok, 401, [], "Unauthorized"})
-    send(GenServer.whereis(name), {:refresh, key, client})
+    send(GenServer.whereis(name), {:refresh, key})
     :sys.get_state(name)
 
     assert [] = :ets.lookup(name, key)

@@ -34,6 +34,9 @@ defmodule Daraja.B2B.PaymentRequest do
   inside `PaymentRequest.new/1`. In production, prefer pre-encrypting with
   `Daraja.SecurityCredential.encrypt/2` and storing only the resulting Base64
   string — so plaintext passwords never live in application state at runtime.
+  When a tuple is supplied via application env, it is encrypted as soon as
+  the env fallback is read; the tuple nevertheless remains in
+  `Application` env until you replace it with a pre-encrypted string.
 
   ## Application env fallbacks
 
@@ -199,10 +202,28 @@ defmodule Daraja.B2B.PaymentRequest do
 
   defp apply_env_fallbacks(params) do
     Enum.reduce(@env_fallbacks, params, fn {field, env_key}, acc ->
-      Map.update(acc, field, Daraja.Config.get(env_key, nil), fn
-        nil -> Daraja.Config.get(env_key, nil)
+      env_value = env_value(field, env_key)
+
+      Map.update(acc, field, env_value, fn
+        nil -> env_value
         value -> value
       end)
     end)
+  end
+
+  defp env_value(:security_credential, env_key), do: resolve_env_credential(env_key)
+  defp env_value(_field, env_key), do: Daraja.Config.get(env_key, nil)
+
+  defp resolve_env_credential(env_key) do
+    case Daraja.Config.get(env_key, nil) do
+      {_password, _pem} = tuple ->
+        case Daraja.SecurityCredential.resolve(tuple) do
+          {:ok, credential} -> credential
+          {:error, _} -> tuple
+        end
+
+      value ->
+        value
+    end
   end
 end

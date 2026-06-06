@@ -39,6 +39,12 @@ defmodule Daraja.TokenCache do
   in `get_token/2`), but only the owning GenServer may insert or delete. This
   prevents local cache poisoning by unrelated processes while preserving read
   concurrency.
+
+  ## Credential retention
+
+  Client credentials are held in the GenServer's `clients` map (keyed like the
+  token cache) so proactive refresh timers carry only the cache key—not a full
+  `%Daraja.Client{}`—in delayed messages.
   """
 
   use GenServer
@@ -108,7 +114,14 @@ defmodule Daraja.TokenCache do
 
     :ets.new(name, [:set, :protected, :named_table, read_concurrency: true])
 
-    {:ok, %{table: name, ttl: ttl, refresh_before: refresh_before, timers: %{}}}
+    {:ok,
+     %{
+       table: name,
+       ttl: ttl,
+       refresh_before: refresh_before,
+       timers: %{},
+       clients: %{}
+     }}
   end
 
   @impl GenServer
@@ -137,7 +150,12 @@ defmodule Daraja.TokenCache do
       {:ok, token} = ok ->
         expires_at = System.monotonic_time(:second) + state.ttl
         :ets.insert(state.table, {key, {token, expires_at}})
-        state = schedule_refresh(state, key, client)
+
+        state =
+          state
+          |> store_client(key, client)
+          |> schedule_refresh(key)
+
         {:reply, ok, state}
 
       error ->
@@ -146,7 +164,17 @@ defmodule Daraja.TokenCache do
   end
 
   @impl GenServer
-  def handle_info({:refresh, key, client}, state) do
+  def handle_info({:refresh, key}, state) do
+    case Map.fetch(state.clients, key) do
+      {:ok, client} ->
+        refresh_token(client, key, state)
+
+      :error ->
+        {:noreply, state}
+    end
+  end
+
+  defp refresh_token(client, key, state) do
     case Daraja.Auth.fetch_token(client) do
       {:ok, token} ->
         expires_at = System.monotonic_time(:second) + state.ttl
@@ -157,24 +185,33 @@ defmodule Daraja.TokenCache do
         existing = Map.get(state.timers, key)
         if existing, do: Process.cancel_timer(existing)
 
-        state = schedule_refresh(state, key, client)
-        {:noreply, state}
+        {:noreply, schedule_refresh(state, key)}
 
       _error ->
         existing = Map.get(state.timers, key)
         if existing, do: Process.cancel_timer(existing)
 
         :ets.delete(state.table, key)
-        {:noreply, %{state | timers: Map.delete(state.timers, key)}}
+
+        {:noreply,
+         %{
+           state
+           | timers: Map.delete(state.timers, key),
+             clients: Map.delete(state.clients, key)
+         }}
     end
   end
 
-  defp schedule_refresh(state, key, client) do
+  defp store_client(state, key, client) do
+    %{state | clients: Map.put(state.clients, key, client)}
+  end
+
+  defp schedule_refresh(state, key) do
     existing = Map.get(state.timers, key)
     if existing, do: Process.cancel_timer(existing)
 
     delay = (state.ttl - state.refresh_before) * 1_000
-    ref = Process.send_after(self(), {:refresh, key, client}, delay)
+    ref = Process.send_after(self(), {:refresh, key}, delay)
     %{state | timers: Map.put(state.timers, key, ref)}
   end
 
