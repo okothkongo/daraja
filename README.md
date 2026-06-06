@@ -199,7 +199,7 @@ C2B validation example:
 
 ```elixir
 with :ok <- Daraja.Callback.Security.verify(ip: conn.remote_ip, check_ip: true, ...),
-     {:ok, callback} <- Daraja.C2B.Callback.parse(payload),
+     {:ok, callback} <- Daraja.C2B.Callback.parse_validation(payload),
      :ok <- Daraja.Callback.Guard.ensure_fresh(callback.trans_id) do
   response =
     if valid_account?(callback.bill_ref_number) do
@@ -326,6 +326,29 @@ config :daraja, :http_client, MyApp.CustomHTTPClient
 from your `mix.exs` and drop the Finch pool from your supervision tree. Finch is an
 optional dependency; leaving the default `Daraja.HTTPClient.Finch` configured while
 omitting Finch from deps will raise at runtime with a clear message.
+
+The default Finch adapter validates Safaricom HTTPS endpoints using your OS trust
+store. It does not pin certificates. For pinning or a private CA, supply a custom
+`Daraja.HTTPClient` with the TLS options your deployment requires.
+
+### Error handling
+
+`:auth_failed` and gateway `:http_error` outcomes return a `%Daraja.APIError{}`
+struct (parsed `error_code` / `error_message` when Safaricom sends JSON; otherwise
+a short summary without the raw body). Business-level API rejections on HTTP 200/400
+still return product-specific `%Response.Error{}` structs. Avoid logging full error
+terms at `:info` or above in production — log `error_code` and `error_message` fields
+instead.
+
+### Request validation
+
+Payment request structs validate `amount` as a positive integer, Kenyan MSISDNs as
+`254XXXXXXXXX`, and (for STK Push) `account_reference` length and `transaction_type`.
+Override the MSISDN pattern when needed:
+
+```elixir
+config :daraja, :msisdn_regex, ~r/^254\d{9}$/
+```
 
 ## Documentation
 

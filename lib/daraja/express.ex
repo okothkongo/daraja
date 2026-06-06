@@ -17,6 +17,13 @@ defmodule Daraja.Express do
   (either via options to `Daraja.Client.new/1` or via the `:daraja` application
   environment). Calls return `{:error, :invalid_client, missing}` when any of
   those fields is missing.
+
+  ## Security
+
+  STK requests encode the passkey into the `Password` field
+  (`Base64(short_code <> passkey <> timestamp)`). Anyone with a captured request
+  body can recover the passkey. Never log STK request bodies; ensure TLS-only
+  transport and redact `Password` in any custom HTTP client logging.
   """
 
   alias Daraja.Client

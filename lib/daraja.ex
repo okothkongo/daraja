@@ -165,6 +165,10 @@ defmodule Daraja do
   Implement `Daraja.HTTPClient` and configure it:
 
       config :daraja, :http_client, MyApp.CustomHTTPClient
+
+  Custom adapters must verify TLS peers, avoid logging credentials or request
+  bodies, use bounded timeouts, and not follow redirects to unintended hosts.
+  See `Daraja.HTTPClient.Compliance` for a review checklist.
   """
 
   @http_client_callback_arity 4

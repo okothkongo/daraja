@@ -260,6 +260,20 @@ defmodule Daraja.C2BTest do
     end
   end
 
+  describe "simulate/2 production guard" do
+    test "returns invalid_request without calling the API", %{client: _client} do
+      client =
+        Client.new(
+          consumer_key: "test_key",
+          consumer_secret: "test_secret",
+          environment: :production
+        )
+
+      assert {:error, :invalid_request, [:sandbox_only]} =
+               Daraja.C2B.simulate(client, @valid_simulate_params)
+    end
+  end
+
   describe "simulate/2 with invalid params" do
     test "returns invalid_request when amount is missing", %{client: client} do
       assert {:error, :invalid_request, missing} =

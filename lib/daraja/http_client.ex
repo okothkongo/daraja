@@ -20,6 +20,14 @@ defmodule Daraja.HTTPClient do
   trust store (standard CA validation). Certificate pinning is not built in;
   use a custom `Daraja.HTTPClient` implementation when your deployment requires
   pinned certificates or other TLS hardening.
+
+  ## Custom client security
+
+  This behaviour specifies only the `request/4` return shape. Custom
+  implementations must verify TLS peers, avoid logging credentials or full
+  request bodies (especially STK `Password` fields), use bounded timeouts, and
+  not follow redirects to unintended hosts. See `Daraja.HTTPClient.Compliance`
+  for a checklist you can use when reviewing or testing custom adapters.
   """
 
   @type status() :: 100..599

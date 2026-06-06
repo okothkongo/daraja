@@ -21,6 +21,13 @@ defmodule Daraja.ExpressTest do
     "CustomerMessage": "Success. Request accepted for processing"
   })
 
+  @stk_rejected ~s({
+    "MerchantRequestID": "2654-4b64-97ff",
+    "CheckoutRequestID": "ws_CO_100720",
+    "ResponseCode": "1",
+    "ResponseDescription": "Rejected by Safaricom."
+  })
+
   @stk_error ~s({
     "requestId": "req-001",
     "errorCode": "400.002.02",
@@ -67,6 +74,17 @@ defmodule Daraja.ExpressTest do
                Daraja.Express.request(client, @valid_params)
 
       assert err.error_code == "400.002.02"
+    end
+
+    test "returns request_failed when ResponseCode is non-zero", %{client: client} do
+      Mock.push_response({:ok, 200, [], @auth_success})
+      Mock.push_response({:ok, 200, [], @stk_rejected})
+
+      assert {:error, :request_failed, %Response.Error{} = err} =
+               Daraja.Express.request(client, @valid_params)
+
+      assert err.error_code == "1"
+      assert err.error_message == "Rejected by Safaricom."
     end
 
     test "returns http_error on transport failure during STK push", %{client: client} do

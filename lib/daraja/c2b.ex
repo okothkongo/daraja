@@ -81,6 +81,10 @@ defmodule Daraja.C2B do
   `command_id` must be `"CustomerPayBillOnline"` or `"CustomerBuyGoodsOnline"`.
   """
   @spec simulate(Client.t(), map() | SimulateRequest.t()) :: result()
+  def simulate(%Client{environment: :production}, _request_or_params) do
+    {:error, :invalid_request, [:sandbox_only]}
+  end
+
   def simulate(%Client{} = client, %SimulateRequest{} = request) do
     do_simulate(client, request)
   end

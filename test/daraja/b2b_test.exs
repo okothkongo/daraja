@@ -16,6 +16,13 @@ defmodule Daraja.B2BTest do
     "ResponseDescription": "Accept the service request successfully."
   })
 
+  @payment_rejected ~s({
+    "ConversationID": "AG_20240706_20106e9209f64bebd05b",
+    "OriginatorConversationID": "600997_Test_32et3241ed8yu",
+    "ResponseCode": "1",
+    "ResponseDescription": "Rejected by Safaricom."
+  })
+
   @api_error ~s({
     "requestId": "req-001",
     "errorCode": "500.002.1001",
@@ -123,6 +130,17 @@ defmodule Daraja.B2BTest do
                Daraja.B2B.request(client, @valid_params)
 
       assert err.error_code == "500.002.1001"
+    end
+
+    test "returns request_failed when ResponseCode is non-zero", %{client: client} do
+      Mock.push_response({:ok, 200, [], @auth_success})
+      Mock.push_response({:ok, 200, [], @payment_rejected})
+
+      assert {:error, :request_failed, %Response.Error{} = err} =
+               Daraja.B2B.request(client, @valid_params)
+
+      assert err.error_code == "1"
+      assert err.error_message == "Rejected by Safaricom."
     end
 
     test "returns http_error on transport failure", %{client: client} do
