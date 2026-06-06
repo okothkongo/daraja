@@ -109,10 +109,37 @@ defmodule Daraja.TokenCacheTest do
     assert {:ok, "fresh"} = TokenCache.get_token(client, name)
   end
 
+  test "fetches fresh token when consumer_secret rotates", %{client: client} do
+    name = unique_name()
+    start_supervised!({TokenCache, name: name})
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-old","expires_in":"3600"})})
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-new","expires_in":"3600"})})
+
+    assert {:ok, "tok-old"} = TokenCache.get_token(client, name)
+
+    rotated =
+      Client.new(consumer_key: client.consumer_key, consumer_secret: "rotated_secret")
+
+    assert {:ok, "tok-new"} = TokenCache.get_token(rotated, name)
+  end
+
+  test "invalidate/1 evicts cached token for client", %{client: client} do
+    name = unique_name()
+    start_supervised!({TokenCache, name: name})
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok","expires_in":"3600"})})
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-fresh","expires_in":"3600"})})
+
+    assert {:ok, "tok"} = TokenCache.get_token(client, name)
+    assert :ok = TokenCache.invalidate(client, name)
+    assert {:ok, "tok-fresh"} = TokenCache.get_token(client, name)
+  end
+
   test "rejects external ETS writes", %{client: client} do
     name = unique_name()
     start_supervised!({TokenCache, name: name})
-    key = {client.consumer_key, client.environment}
+    key = cache_key(client)
 
     assert_raise ArgumentError, fn ->
       :ets.insert(name, {key, {"evil", System.monotonic_time(:second) + 3600}})
@@ -152,7 +179,7 @@ defmodule Daraja.TokenCacheTest do
     Mock.push_response({:ok, 200, [], ~s({"access_token":"tok","expires_in":"3600"})})
     assert {:ok, "tok"} = TokenCache.get_token(client, name)
 
-    key = {client.consumer_key, client.environment}
+    key = cache_key(client)
     assert [{^key, _}] = :ets.lookup(name, key)
 
     Mock.push_response({:ok, 401, [], "Unauthorized"})
@@ -163,4 +190,8 @@ defmodule Daraja.TokenCacheTest do
   end
 
   defp unique_name, do: :"test_cache_#{System.unique_integer([:positive])}"
+
+  defp cache_key(%Client{} = client) do
+    {client.consumer_key, client.environment, :crypto.hash(:sha256, client.consumer_secret)}
+  end
 end

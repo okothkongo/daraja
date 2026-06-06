@@ -13,9 +13,11 @@ defmodule Daraja.TokenCache do
 
   ## Cache key
 
-  Tokens are keyed by `{consumer_key, environment}`. If you rotate a consumer
-  secret while keeping the same consumer key, the cache continues to serve the
-  old token until it expires or the proactive refresh fires.
+  Tokens are keyed by `{consumer_key, environment, secret_hash}` where
+  `secret_hash` is a SHA-256 digest of `consumer_secret`. Rotating the secret
+  while keeping the same consumer key produces a cache miss and fetches a fresh
+  token. Call `invalidate/1` after rotation to evict any orphaned entry keyed
+  under the previous secret.
 
   ## TTL and refresh
 
@@ -53,6 +55,20 @@ defmodule Daraja.TokenCache do
 
   @default_ttl 3600
   @default_refresh_before 120
+
+  @doc """
+  Evicts the cached token for `client`, canceling any scheduled refresh.
+
+  Use after credential rotation to drop a stale entry obtained with the
+  previous secret. With the updated cache key, a rotated secret already
+  misses the cache; `invalidate/1` cleans up the orphaned entry and timer.
+
+  `server` defaults to `Daraja.TokenCache`.
+  """
+  @spec invalidate(Client.t(), atom()) :: :ok
+  def invalidate(%Client{} = client, server \\ __MODULE__) do
+    GenServer.call(server, {:invalidate, client})
+  end
 
   @doc """
   Returns a cached access token for `client`, fetching from the network on a
@@ -125,6 +141,11 @@ defmodule Daraja.TokenCache do
   end
 
   @impl GenServer
+  def handle_call({:invalidate, client}, _from, state) do
+    {:reply, :ok, evict(state, cache_key(client))}
+  end
+
+  @impl GenServer
   def handle_call({:fetch_and_cache, client}, _from, state) do
     key = cache_key(client)
 
@@ -188,18 +209,21 @@ defmodule Daraja.TokenCache do
         {:noreply, schedule_refresh(state, key)}
 
       _error ->
-        existing = Map.get(state.timers, key)
-        if existing, do: Process.cancel_timer(existing)
-
-        :ets.delete(state.table, key)
-
-        {:noreply,
-         %{
-           state
-           | timers: Map.delete(state.timers, key),
-             clients: Map.delete(state.clients, key)
-         }}
+        {:noreply, evict(state, key)}
     end
+  end
+
+  defp evict(state, key) do
+    existing = Map.get(state.timers, key)
+    if existing, do: Process.cancel_timer(existing)
+
+    :ets.delete(state.table, key)
+
+    %{
+      state
+      | timers: Map.delete(state.timers, key),
+        clients: Map.delete(state.clients, key)
+    }
   end
 
   defp store_client(state, key, client) do
@@ -215,5 +239,11 @@ defmodule Daraja.TokenCache do
     %{state | timers: Map.put(state.timers, key, ref)}
   end
 
-  defp cache_key(%Client{} = client), do: {client.consumer_key, client.environment}
+  defp cache_key(%Client{} = client) do
+    {client.consumer_key, client.environment, secret_hash(client.consumer_secret)}
+  end
+
+  defp secret_hash(secret) do
+    :crypto.hash(:sha256, secret)
+  end
 end
