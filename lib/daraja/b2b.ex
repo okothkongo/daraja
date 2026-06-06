@@ -66,29 +66,30 @@ defmodule Daraja.B2B do
   end
 
   defp do_request(%Client{} = client, %PaymentRequest{} = request) do
-    with {:ok, token} <- Daraja.Auth.get_token(client) do
-      body =
-        %{
-          "Initiator" => request.initiator,
-          "SecurityCredential" => request.security_credential,
-          "CommandID" => request.command_id,
-          "SenderIdentifierType" => request.sender_identifier_type,
-          "RecieverIdentifierType" => request.receiver_identifier_type,
-          "Amount" => request.amount,
-          "PartyA" => request.party_a,
-          "PartyB" => request.party_b,
-          "AccountReference" => request.account_reference,
-          "Remarks" => request.remarks,
-          "QueueTimeOutURL" => request.queue_timeout_url,
-          "ResultURL" => request.result_url
-        }
-        |> maybe_drop_nil_account_reference()
-        |> JSON.encode!()
+    body =
+      %{
+        "Initiator" => request.initiator,
+        "SecurityCredential" => request.security_credential,
+        "CommandID" => request.command_id,
+        "SenderIdentifierType" => request.sender_identifier_type,
+        "RecieverIdentifierType" => request.receiver_identifier_type,
+        "Amount" => request.amount,
+        "PartyA" => request.party_a,
+        "PartyB" => request.party_b,
+        "AccountReference" => request.account_reference,
+        "Remarks" => request.remarks,
+        "QueueTimeOutURL" => request.queue_timeout_url,
+        "ResultURL" => request.result_url
+      }
+      |> maybe_drop_nil_account_reference()
+      |> JSON.encode!()
 
-      url = Client.base_url(client) <> @payment_request_path
+    url = Client.base_url(client) <> @payment_request_path
+
+    Daraja.Auth.with_token(client, fn token ->
       headers = [{"Authorization", "Bearer " <> token}, {"Content-Type", "application/json"}]
       make_request(url, headers, body)
-    end
+    end)
   end
 
   defp make_request(url, headers, body) do

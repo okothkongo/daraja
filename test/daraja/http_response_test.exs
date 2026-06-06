@@ -54,4 +54,11 @@ defmodule Daraja.HTTPResponseTest do
     assert {:error, :http_error, {404, "Not Found"}} =
              Daraja.HTTPResponse.dispatch(404, "Not Found", &parse/1)
   end
+
+  test "detects invalid access token in Daraja error envelope" do
+    body = ~s({"requestId":"r","errorCode":"400.003.01","errorMessage":"Invalid Access Token"})
+
+    assert Daraja.HTTPResponse.invalid_access_token?(body)
+    refute Daraja.HTTPResponse.invalid_access_token?(@daraja_error)
+  end
 end

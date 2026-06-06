@@ -37,6 +37,36 @@ defmodule Daraja.AuthTest do
     assert {:error, :http_error, :timeout} = Daraja.Auth.fetch_token(client)
   end
 
+  test "fetch_token_info/2 parses string expires_in", %{client: client} do
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok123","expires_in":"1800"})})
+
+    assert {:ok, %{access_token: "tok123", expires_in: 1800}} =
+             Daraja.Auth.fetch_token_info(client)
+  end
+
+  test "fetch_token_info/2 parses integer expires_in", %{client: client} do
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok123","expires_in":900})})
+
+    assert {:ok, %{access_token: "tok123", expires_in: 900}} =
+             Daraja.Auth.fetch_token_info(client)
+  end
+
+  test "fetch_token_info/2 falls back to default ttl when expires_in is missing", %{
+    client: client
+  } do
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok123"})})
+
+    assert {:ok, %{access_token: "tok123", expires_in: 3600}} =
+             Daraja.Auth.fetch_token_info(client)
+  end
+
+  test "fetch_token_info/2 uses custom default ttl", %{client: client} do
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok123"})})
+
+    assert {:ok, %{access_token: "tok123", expires_in: 600}} =
+             Daraja.Auth.fetch_token_info(client, 600)
+  end
+
   test "fetches a fresh token on every call (no caching)", %{client: client} do
     Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-1","expires_in":"3600"})})
     Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-2","expires_in":"3600"})})
@@ -63,6 +93,40 @@ defmodule Daraja.AuthTest do
       assert {:ok, "tok-default"} = Daraja.Auth.get_token(client)
       assert {:ok, "tok-default"} = Daraja.Auth.get_token(client)
       assert {:error, :no_response_queued} = Mock.request(:get, "", [], "")
+    end
+  end
+
+  describe "with_token/2" do
+    setup do
+      start_supervised!(Daraja.TokenCache)
+      :ok
+    end
+
+    test "invalidates cache and retries once after API auth failure", %{client: client} do
+      Mock.push_response({:ok, 200, [], ~s({"access_token":"stale","expires_in":"3600"})})
+      Mock.push_response({:ok, 200, [], ~s({"access_token":"fresh","expires_in":"3600"})})
+
+      assert {:ok, "stale"} = Daraja.Auth.get_token(client)
+
+      result =
+        Daraja.Auth.with_token(client, fn token ->
+          if token == "stale", do: {:error, :auth_failed, "Unauthorized"}, else: {:ok, token}
+        end)
+
+      assert {:ok, "fresh"} = result
+      assert {:error, :no_response_queued} = Mock.request(:get, "", [], "")
+    end
+
+    test "returns auth_failed when retry also fails", %{client: client} do
+      Mock.push_response({:ok, 200, [], ~s({"access_token":"stale","expires_in":"3600"})})
+      Mock.push_response({:ok, 200, [], ~s({"access_token":"fresh","expires_in":"3600"})})
+
+      assert {:ok, "stale"} = Daraja.Auth.get_token(client)
+
+      assert {:error, :auth_failed, "Unauthorized"} =
+               Daraja.Auth.with_token(client, fn _token ->
+                 {:error, :auth_failed, "Unauthorized"}
+               end)
     end
   end
 

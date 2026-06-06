@@ -93,36 +93,38 @@ defmodule Daraja.C2B do
   end
 
   defp do_register_url(%Client{} = client, %RegisterUrlRequest{} = request) do
-    with {:ok, token} <- Daraja.Auth.get_token(client) do
-      body =
-        JSON.encode!(%{
-          "ShortCode" => request.short_code,
-          "ResponseType" => request.response_type,
-          "ConfirmationURL" => request.confirmation_url,
-          "ValidationURL" => request.validation_url
-        })
+    body =
+      JSON.encode!(%{
+        "ShortCode" => request.short_code,
+        "ResponseType" => request.response_type,
+        "ConfirmationURL" => request.confirmation_url,
+        "ValidationURL" => request.validation_url
+      })
 
-      url = Client.base_url(client) <> @register_url_path
+    url = Client.base_url(client) <> @register_url_path
+
+    Daraja.Auth.with_token(client, fn token ->
       headers = [{"Authorization", "Bearer " <> token}, {"Content-Type", "application/json"}]
       make_request(url, headers, body)
-    end
+    end)
   end
 
   defp do_simulate(%Client{} = client, %SimulateRequest{} = request) do
-    with {:ok, token} <- Daraja.Auth.get_token(client) do
-      body =
-        JSON.encode!(%{
-          "ShortCode" => request.short_code,
-          "CommandID" => request.command_id,
-          "Amount" => request.amount,
-          "Msisdn" => request.msisdn,
-          "BillRefNumber" => request.bill_ref_number || ""
-        })
+    body =
+      JSON.encode!(%{
+        "ShortCode" => request.short_code,
+        "CommandID" => request.command_id,
+        "Amount" => request.amount,
+        "Msisdn" => request.msisdn,
+        "BillRefNumber" => request.bill_ref_number || ""
+      })
 
-      url = Client.base_url(client) <> @simulate_path
+    url = Client.base_url(client) <> @simulate_path
+
+    Daraja.Auth.with_token(client, fn token ->
       headers = [{"Authorization", "Bearer " <> token}, {"Content-Type", "application/json"}]
       make_request(url, headers, body)
-    end
+    end)
   end
 
   defp make_request(url, headers, body) do

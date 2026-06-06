@@ -95,11 +95,13 @@ defmodule Daraja.C2BTest do
                })
     end
 
-    test "returns request_failed with Error struct on API error body", %{client: client} do
+    test "returns auth_failed after retrying invalid access token", %{client: client} do
+      Mock.push_response({:ok, 200, [], @auth_success})
+      Mock.push_response({:ok, 400, [], @api_error})
       Mock.push_response({:ok, 200, [], @auth_success})
       Mock.push_response({:ok, 400, [], @api_error})
 
-      assert {:error, :request_failed, %Response.Error{} = err} =
+      assert {:error, :auth_failed, %Response.Error{} = err} =
                Daraja.C2B.register_url(client, @valid_register_params)
 
       assert err.error_code == "400.003.01"
@@ -204,11 +206,13 @@ defmodule Daraja.C2BTest do
       assert {:ok, %Response.Success{}} = Daraja.C2B.simulate(client, params)
     end
 
-    test "returns request_failed with Error struct on API error body", %{client: client} do
+    test "returns auth_failed after retrying invalid access token", %{client: client} do
+      Mock.push_response({:ok, 200, [], @auth_success})
+      Mock.push_response({:ok, 400, [], @api_error})
       Mock.push_response({:ok, 200, [], @auth_success})
       Mock.push_response({:ok, 400, [], @api_error})
 
-      assert {:error, :request_failed, %Response.Error{} = err} =
+      assert {:error, :auth_failed, %Response.Error{} = err} =
                Daraja.C2B.simulate(client, @valid_simulate_params)
 
       assert err.error_code == "400.003.01"

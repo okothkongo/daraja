@@ -165,6 +165,21 @@ defmodule Daraja.B2CTest do
       Mock.push_response({:ok, 401, [], "Unauthorized"})
       assert {:error, :auth_failed, "Unauthorized"} = Daraja.B2C.payment(client, @valid_params)
     end
+
+    test "invalidates cache and retries after payment 401", %{client: client} do
+      name = :"b2c_cache_#{System.unique_integer([:positive])}"
+      start_supervised!({Daraja.TokenCache, name: name})
+      Application.put_env(:daraja, :token_cache, name)
+      on_exit(fn -> Application.delete_env(:daraja, :token_cache) end)
+
+      Mock.push_response({:ok, 200, [], ~s({"access_token":"stale","expires_in":"3600"})})
+      Mock.push_response({:ok, 401, [], "Unauthorized"})
+      Mock.push_response({:ok, 200, [], ~s({"access_token":"fresh","expires_in":"3600"})})
+      Mock.push_response({:ok, 200, [], @payment_success})
+
+      assert {:ok, %Response.Success{}} = Daraja.B2C.payment(client, @valid_params)
+      assert {:error, :no_response_queued} = Mock.request(:get, "", [], "")
+    end
   end
 
   describe "payment/2 with invalid params" do

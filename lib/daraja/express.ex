@@ -51,8 +51,7 @@ defmodule Daraja.Express do
   end
 
   defp do_request(%Client{} = client, %Request{} = request) do
-    with :ok <- validate_client(client),
-         {:ok, token} <- Daraja.Auth.get_token(client) do
+    with :ok <- validate_client(client) do
       timestamp = Calendar.strftime(NaiveDateTime.utc_now(), "%Y%m%d%H%M%S")
       short_code = client.business_short_code
       password = Base.encode64(short_code <> client.passkey <> timestamp)
@@ -73,8 +72,11 @@ defmodule Daraja.Express do
         })
 
       url = Client.base_url(client) <> @stk_push_path
-      headers = [{"Authorization", "Bearer " <> token}, {"Content-Type", "application/json"}]
-      make_request(url, headers, body)
+
+      Daraja.Auth.with_token(client, fn token ->
+        headers = [{"Authorization", "Bearer " <> token}, {"Content-Type", "application/json"}]
+        make_request(url, headers, body)
+      end)
     end
   end
 

@@ -74,8 +74,8 @@ defmodule Daraja.TokenCacheTest do
     refresh_before = 1
     start_supervised!({TokenCache, name: name, ttl: ttl, refresh_before: refresh_before})
 
-    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-initial","expires_in":"3600"})})
-    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-refreshed","expires_in":"3600"})})
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-initial","expires_in":"2"})})
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-refreshed","expires_in":"2"})})
 
     assert {:ok, "tok-initial"} = TokenCache.get_token(client, name)
 
@@ -99,9 +99,9 @@ defmodule Daraja.TokenCacheTest do
     ttl = 1
     start_supervised!({TokenCache, name: name, ttl: ttl, refresh_before: 0})
 
-    Mock.push_response({:ok, 200, [], ~s({"access_token":"old-tok","expires_in":"3600"})})
-    Mock.push_response({:ok, 200, [], ~s({"access_token":"fresh","expires_in":"3600"})})
-    Mock.push_response({:ok, 200, [], ~s({"access_token":"fresh","expires_in":"3600"})})
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"old-tok","expires_in":"1"})})
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"fresh","expires_in":"1"})})
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"fresh","expires_in":"1"})})
 
     assert {:ok, "old-tok"} = TokenCache.get_token(client, name)
     Process.sleep(ttl * 1_000 + 100)
@@ -142,8 +142,35 @@ defmodule Daraja.TokenCacheTest do
     key = cache_key(client)
 
     assert_raise ArgumentError, fn ->
-      :ets.insert(name, {key, {"evil", System.monotonic_time(:second) + 3600}})
+      :ets.insert(name, {key, {"evil", System.monotonic_time(:second) + 3600, 3600}})
     end
+  end
+
+  test "uses OAuth expires_in instead of configured ttl", %{client: client} do
+    name = unique_name()
+    start_supervised!({TokenCache, name: name, ttl: 3600, refresh_before: 0})
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"short-lived","expires_in":"1"})})
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"refetched","expires_in":"1"})})
+
+    assert {:ok, "short-lived"} = TokenCache.get_token(client, name)
+    Process.sleep(1_100)
+
+    assert {:ok, "refetched"} = TokenCache.get_token(client, name)
+  end
+
+  test "falls back to configured ttl when expires_in is missing", %{client: client} do
+    name = unique_name()
+    ttl = 1
+    start_supervised!({TokenCache, name: name, ttl: ttl, refresh_before: 0})
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"no-expiry"})})
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"refetched"})})
+
+    assert {:ok, "no-expiry"} = TokenCache.get_token(client, name)
+    Process.sleep(ttl * 1_000 + 100)
+
+    assert {:ok, "refetched"} = TokenCache.get_token(client, name)
   end
 
   test "handles ETS ArgumentError during startup race", %{client: client} do

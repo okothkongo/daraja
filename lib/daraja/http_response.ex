@@ -31,4 +31,19 @@ defmodule Daraja.HTTPResponse do
   def dispatch(status, body, _parse) do
     {:error, :http_error, {status, body}}
   end
+
+  @invalid_access_token_code "400.003.01"
+
+  @doc false
+  @spec invalid_access_token?(term()) :: boolean()
+  def invalid_access_token?(%{error_code: @invalid_access_token_code}), do: true
+
+  def invalid_access_token?(body) when is_binary(body) do
+    case JSON.decode(body) do
+      {:ok, %{"errorCode" => @invalid_access_token_code}} -> true
+      _ -> false
+    end
+  end
+
+  def invalid_access_token?(_), do: false
 end

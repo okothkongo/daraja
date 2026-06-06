@@ -21,13 +21,13 @@ defmodule Daraja.TokenCache do
 
   ## TTL and refresh
 
-  `:ttl` (default 3600 s) sets how long a cached token is considered valid.
+  Token lifetime comes from Safaricom's OAuth `expires_in` field. `:ttl`
+  (default 3600 s) is used only when `expires_in` is absent or unparseable.
   `:refresh_before` (default 120 s) controls how many seconds before expiry
   the cache proactively fetches a fresh token in the background.
 
-  `refresh_before` must be less than `ttl`. The defaults (3600/120) are safe.
-  A misconfiguration such as `ttl: 10, refresh_before: 120` produces timers
-  firing at negative intervals, which is immediately obvious at startup.
+  `refresh_before` should be less than the effective token lifetime. When
+  `expires_in` is shorter than `refresh_before`, refresh is scheduled immediately.
 
   ## Crash and restart
 
@@ -88,7 +88,7 @@ defmodule Daraja.TokenCache do
 
     try do
       case :ets.lookup(server, key) do
-        [{^key, {token, expires_at}}] ->
+        [{^key, {token, expires_at, _ttl}}] ->
           if expires_at > System.monotonic_time(:second) do
             {:ok, token}
           else
@@ -152,7 +152,7 @@ defmodule Daraja.TokenCache do
     # Re-check under the GenServer lock: multiple callers that missed the fast
     # path may be queued here; only the first should fetch from the network.
     case :ets.lookup(state.table, key) do
-      [{^key, {token, expires_at}}] ->
+      [{^key, {token, expires_at, _ttl}}] ->
         if expires_at > System.monotonic_time(:second) do
           {:reply, {:ok, token}, state}
         else
@@ -167,17 +167,17 @@ defmodule Daraja.TokenCache do
   defp do_fetch_and_cache(client, state) do
     key = cache_key(client)
 
-    case Daraja.Auth.fetch_token(client) do
-      {:ok, token} = ok ->
-        expires_at = System.monotonic_time(:second) + state.ttl
-        :ets.insert(state.table, {key, {token, expires_at}})
+    case Daraja.Auth.fetch_token_info(client, state.ttl) do
+      {:ok, %{access_token: token, expires_in: ttl}} ->
+        expires_at = System.monotonic_time(:second) + ttl
+        :ets.insert(state.table, {key, {token, expires_at, ttl}})
 
         state =
           state
           |> store_client(key, client)
-          |> schedule_refresh(key)
+          |> schedule_refresh(key, ttl)
 
-        {:reply, ok, state}
+        {:reply, {:ok, token}, state}
 
       error ->
         {:reply, error, state}
@@ -196,17 +196,17 @@ defmodule Daraja.TokenCache do
   end
 
   defp refresh_token(client, key, state) do
-    case Daraja.Auth.fetch_token(client) do
-      {:ok, token} ->
-        expires_at = System.monotonic_time(:second) + state.ttl
-        :ets.insert(state.table, {key, {token, expires_at}})
+    case Daraja.Auth.fetch_token_info(client, state.ttl) do
+      {:ok, %{access_token: token, expires_in: ttl}} ->
+        expires_at = System.monotonic_time(:second) + ttl
+        :ets.insert(state.table, {key, {token, expires_at, ttl}})
 
         # The timer that delivered this message has already fired, so
         # cancel_timer returns false here — expected, not a bug.
         existing = Map.get(state.timers, key)
         if existing, do: Process.cancel_timer(existing)
 
-        {:noreply, schedule_refresh(state, key)}
+        {:noreply, schedule_refresh(state, key, ttl)}
 
       _error ->
         {:noreply, evict(state, key)}
@@ -230,11 +230,11 @@ defmodule Daraja.TokenCache do
     %{state | clients: Map.put(state.clients, key, client)}
   end
 
-  defp schedule_refresh(state, key) do
+  defp schedule_refresh(state, key, ttl) do
     existing = Map.get(state.timers, key)
     if existing, do: Process.cancel_timer(existing)
 
-    delay = (state.ttl - state.refresh_before) * 1_000
+    delay = max(0, ttl - state.refresh_before) * 1_000
     ref = Process.send_after(self(), {:refresh, key}, delay)
     %{state | timers: Map.put(state.timers, key, ref)}
   end

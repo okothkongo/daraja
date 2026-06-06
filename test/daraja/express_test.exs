@@ -106,6 +106,8 @@ defmodule Daraja.ExpressTest do
     test "returns auth_failed when STK push responds with 401", %{client: client} do
       Mock.push_response({:ok, 200, [], @auth_success})
       Mock.push_response({:ok, 401, [], "Unauthorized"})
+      Mock.push_response({:ok, 200, [], @auth_success})
+      Mock.push_response({:ok, 401, [], "Unauthorized"})
 
       assert {:error, :auth_failed, "Unauthorized"} =
                Daraja.Express.request(client, @valid_params)
