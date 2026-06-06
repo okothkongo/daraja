@@ -66,7 +66,7 @@ defmodule Daraja.B2B do
   end
 
   defp do_request(%Client{} = client, %PaymentRequest{} = request) do
-    with {:ok, token} <- Daraja.Auth.fetch_token(client) do
+    with {:ok, token} <- Daraja.Auth.get_token(client) do
       body =
         %{
           "Initiator" => request.initiator,

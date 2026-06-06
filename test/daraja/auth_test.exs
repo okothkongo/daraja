@@ -44,4 +44,42 @@ defmodule Daraja.AuthTest do
     assert {:ok, "tok-1"} = Daraja.Auth.fetch_token(client)
     assert {:ok, "tok-2"} = Daraja.Auth.fetch_token(client)
   end
+
+  test "get_token/1 hits the network when no cache is running", %{client: client} do
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-no-cache","expires_in":"3600"})})
+
+    assert {:ok, "tok-no-cache"} = Daraja.Auth.get_token(client)
+  end
+
+  describe "get_token/1 with default-named cache" do
+    setup do
+      start_supervised!(Daraja.TokenCache)
+      :ok
+    end
+
+    test "serves second call from cache without hitting network", %{client: client} do
+      Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-default","expires_in":"3600"})})
+
+      assert {:ok, "tok-default"} = Daraja.Auth.get_token(client)
+      assert {:ok, "tok-default"} = Daraja.Auth.get_token(client)
+      assert {:error, :no_response_queued} = Mock.request(:get, "", [], "")
+    end
+  end
+
+  describe "get_token/1 with config-named cache" do
+    setup do
+      Application.put_env(:daraja, :token_cache, :auth_test_cache)
+      start_supervised!({Daraja.TokenCache, name: :auth_test_cache})
+      on_exit(fn -> Application.delete_env(:daraja, :token_cache) end)
+      :ok
+    end
+
+    test "routes through custom-named cache via application config", %{client: client} do
+      Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-config","expires_in":"3600"})})
+
+      assert {:ok, "tok-config"} = Daraja.Auth.get_token(client)
+      assert {:ok, "tok-config"} = Daraja.Auth.get_token(client)
+      assert {:error, :no_response_queued} = Mock.request(:get, "", [], "")
+    end
+  end
 end

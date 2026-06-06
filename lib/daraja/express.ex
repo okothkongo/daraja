@@ -52,7 +52,7 @@ defmodule Daraja.Express do
 
   defp do_request(%Client{} = client, %Request{} = request) do
     with :ok <- validate_client(client),
-         {:ok, token} <- Daraja.Auth.fetch_token(client) do
+         {:ok, token} <- Daraja.Auth.get_token(client) do
       timestamp = Calendar.strftime(NaiveDateTime.utc_now(), "%Y%m%d%H%M%S")
       short_code = client.business_short_code
       password = Base.encode64(short_code <> client.passkey <> timestamp)

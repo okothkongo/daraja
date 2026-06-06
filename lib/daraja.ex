@@ -126,6 +126,28 @@ defmodule Daraja do
           consumer_secret: merchant.consumer_secret
         )
 
+  ## Token Caching
+
+  By default every API call fetches a fresh OAuth token from the network. Add
+  `Daraja.Supervisor` to your application's supervision tree to enable
+  ETS-backed caching — subsequent calls reuse the token until it expires:
+
+      children = [
+        {Daraja.Supervisor, []}
+      ]
+
+  In umbrella apps, start one supervisor per credential set with distinct names
+  and point the library at the right cache via config:
+
+      # supervision tree
+      {Daraja.Supervisor, name: :billing_sup, cache_name: :billing_cache}
+
+      # config/config.exs (or the umbrella child's config)
+      config :daraja, token_cache: :billing_cache
+
+  The `:token_cache` config value must be an atom. Omit it to use the default
+  `Daraja.TokenCache`. See `Daraja.Auth.get_token/1` for details.
+
   ## Custom HTTP Client
 
   Implement `Daraja.HTTPClient` and configure it:
