@@ -44,7 +44,7 @@ defmodule Daraja do
 
   Pass the initiator password and certificate as a tuple — `PaymentRequest.new/1`
   encrypts it internally (the tuple form is sugar over calling
-  `Daraja.B2C.SecurityCredential.encrypt/2` yourself):
+  `Daraja.SecurityCredential.encrypt/2` yourself):
 
       Daraja.B2C.payment(client, %{
         originator_conversation_id: "my-unique-id-001",
@@ -60,12 +60,12 @@ defmodule Daraja do
         occasion: "Promo"
       })
 
-  For production, pre-encrypt with `Daraja.B2C.SecurityCredential.encrypt/2` at
+  For production, pre-encrypt with `Daraja.SecurityCredential.encrypt/2` at
   deploy time and store only the resulting Base64 string so plaintext passwords
   never live in application state:
 
       {:ok, security_credential} =
-        Daraja.B2C.SecurityCredential.encrypt(
+        Daraja.SecurityCredential.encrypt(
           "your-initiator-password",
           File.read!("cert.cer")
         )
