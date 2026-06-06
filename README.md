@@ -232,8 +232,13 @@ end
 When published to Hex, `{:daraja, "~> 0.1.0"}` will replace the git dependency.
 
 `:finch` is optional in Daraja's own `mix.exs` but required for the default
-HTTP adapter. Start a Finch pool and optionally enable token caching in your
-application's supervision tree:
+HTTP adapter. CI tests the Finch adapter against **0.18.0** (minimum) and the
+latest release matching `~> 0.18` so Mint/TLS stack changes are caught early.
+Use `{:finch, "~> 0.18"}` in your app unless you provide a custom
+`Daraja.HTTPClient`.
+
+Start a Finch pool and optionally enable token caching in your application's
+supervision tree:
 
 ```elixir
 children = [

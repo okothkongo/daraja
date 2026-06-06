@@ -176,6 +176,14 @@ defmodule Daraja.B2CTest do
       assert {:error, :invalid_request, missing} = PaymentRequest.new(params)
       assert :security_credential in missing
     end
+
+    test "returns invalid_request when env security_credential tuple cannot be encrypted" do
+      Application.put_env(:daraja, :b2c_security_credential, {"password", "bad-pem"})
+      params = Map.delete(@valid_params, :security_credential)
+
+      assert {:error, :invalid_request, [{:security_credential, :invalid_public_key}]} =
+               PaymentRequest.new(params)
+    end
   end
 
   describe "payment/2 auth failure" do

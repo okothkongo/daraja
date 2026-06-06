@@ -25,6 +25,8 @@ defmodule Daraja.CallbackURL do
   * Known metadata hostnames (for example `metadata.google.internal`) are rejected.
   """
 
+  import Bitwise
+
   @blocked_hostnames ~w(localhost metadata metadata.google.internal)
 
   @spec validate(String.t(), keyword()) :: :ok | {:error, String.t()}
@@ -67,7 +69,7 @@ defmodule Daraja.CallbackURL do
 
     with :ok <- require_url_parts(uri),
          :ok <- validate_scheme(uri.scheme, environment),
-         :ok <- validate_host(uri.host) do
+         :ok <- validate_host(uri.host, url) do
       validate_allowlist(uri.host)
     end
   end
@@ -93,7 +95,7 @@ defmodule Daraja.CallbackURL do
     end
   end
 
-  defp validate_host(host) do
+  defp validate_host(host, url) do
     normalized = String.downcase(host)
 
     cond do
@@ -103,7 +105,7 @@ defmodule Daraja.CallbackURL do
       String.ends_with?(normalized, ".localhost") ->
         {:error, "host is not allowed"}
 
-      ip_blocked?(host) ->
+      ip_blocked?(host, url) ->
         {:error, "host must not be a private or metadata address"}
 
       true ->
@@ -134,8 +136,11 @@ defmodule Daraja.CallbackURL do
     end)
   end
 
-  defp ip_blocked?(host) do
-    host
+  defp ip_blocked?(host, url) do
+    lookup_host =
+      if is_binary(url) && String.contains?(url, "[#{host}]"), do: "[#{host}]", else: host
+
+    lookup_host
     |> normalize_ip_host()
     |> parse_ip()
     |> case do
@@ -150,11 +155,8 @@ defmodule Daraja.CallbackURL do
 
   defp parse_ip(host) do
     case :inet.parse_address(String.to_charlist(host)) do
-      {:ok, {a, b, c, d}} ->
-        {:ipv4, {a, b, c, d}}
-
-      {:ok, {0, 0, 0, 0, 0, 65535, a, b}} ->
-        {:ipv4, {a, b, 0, 0}}
+      {:ok, ip} when tuple_size(ip) == 4 ->
+        {:ipv4, ip}
 
       {:ok, ip} when tuple_size(ip) == 8 ->
         {:ipv6, ip}
@@ -172,8 +174,12 @@ defmodule Daraja.CallbackURL do
   defp ipv4_private?({0, _, _, _}), do: true
   defp ipv4_private?(_), do: false
 
+  defp ipv6_blocked?({0, 0, 0, 0, 0, 65535, a, b}),
+    do: ipv4_private?(ipv4_from_mapped_words(a, b))
+
   defp ipv6_blocked?({0, 0, 0, 0, 0, 0, 0, 1}), do: true
-  defp ipv6_blocked?({0, 0, 0, 0, 0, 65535, a, b}), do: ipv4_private?({a, b, 0, 0})
   defp ipv6_blocked?({second, _, _, _, _, _, _, _}) when second in 0xFE80..0xFEBF, do: true
   defp ipv6_blocked?(_), do: false
+
+  defp ipv4_from_mapped_words(a, b), do: {a >>> 8, a &&& 0xFF, b >>> 8, b &&& 0xFF}
 end

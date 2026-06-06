@@ -206,6 +206,31 @@ defmodule Daraja.SecurityCredentialTest do
 
       assert {:ok, _} = SecurityCredential.encrypt("password", @cert_pem)
     end
+
+    test "ignores non-list security_credential_pins config" do
+      Application.put_env(:daraja, :security_credential_pins, "not-a-list")
+
+      {_private_key, public_key} = rsa_keypair()
+
+      public_pem =
+        :public_key.pem_encode([:public_key.pem_entry_encode(:RSAPublicKey, public_key)])
+
+      assert {:ok, _} = SecurityCredential.encrypt("password", public_pem)
+    end
+
+    test "returns invalid_public_key when pinning is enabled and fingerprint fails" do
+      Application.put_env(:daraja, :environment, :production)
+      Application.put_env(:daraja, :security_credential_pins, [@fixture_pin])
+
+      {_private_key, public_key} = rsa_keypair()
+
+      {:SubjectPublicKeyInfo, der, info} =
+        :public_key.pem_entry_encode(:SubjectPublicKeyInfo, public_key)
+
+      bad_pem = :public_key.pem_encode([{:SubjectPublicKeyInfo, binary_part(der, 0, 10), info}])
+
+      assert {:error, :invalid_public_key} = SecurityCredential.encrypt("password", bad_pem)
+    end
   end
 
   test "returns encryption_failed when the password is too large for the key" do

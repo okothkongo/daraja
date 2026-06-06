@@ -70,6 +70,18 @@ defmodule Daraja.AuthTest do
              Daraja.Auth.fetch_token_info(client, 600)
   end
 
+  test "fetch_token_info/2 falls back when expires_in is unparseable", %{client: client} do
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok123","expires_in":"0"})})
+
+    assert {:ok, %{access_token: "tok123", expires_in: 3600}} =
+             Daraja.Auth.fetch_token_info(client)
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok456","expires_in":true})})
+
+    assert {:ok, %{access_token: "tok456", expires_in: 3600}} =
+             Daraja.Auth.fetch_token_info(client)
+  end
+
   test "fetches a fresh token on every call (no caching)", %{client: client} do
     Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-1","expires_in":"3600"})})
     Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-2","expires_in":"3600"})})

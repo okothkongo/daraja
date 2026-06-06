@@ -382,6 +382,12 @@ defmodule Daraja.C2BTest do
                Callback.parse_confirmation(@valid_c2b_payload)
     end
 
+    test "returns expected a map for non-map payloads" do
+      assert {:error, :invalid_callback, "expected a map"} = Callback.parse("not a map")
+      assert {:error, :invalid_callback, "expected a map"} = Callback.parse_validation(123)
+      assert {:error, :invalid_callback, "expected a map"} = Callback.parse_confirmation(nil)
+    end
+
     test "kind/1 distinguishes validation and confirmation structs" do
       validation = %Callback.Validation{}
       confirmation = %Callback.Confirmation{}

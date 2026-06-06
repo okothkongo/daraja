@@ -184,6 +184,13 @@ defmodule Daraja.ExpressTest do
                })
     end
 
+    test "returns invalid_request when account_reference is not a string", %{client: client} do
+      assert {:error, :invalid_request, [{:account_reference, msg}]} =
+               Daraja.Express.request(client, %{@valid_params | account_reference: 12_345})
+
+      assert msg =~ "must be a string"
+    end
+
     test "returns invalid_request for unknown transaction_type", %{client: client} do
       assert {:error, :invalid_request, [{:transaction_type, _}]} =
                Daraja.Express.request(

@@ -218,6 +218,20 @@ defmodule Daraja.B2BTest do
       assert {:error, :invalid_request, missing} = PaymentRequest.new(params)
       assert :security_credential in missing
     end
+
+    test "returns invalid_request for unsafe callback URLs" do
+      params = Map.put(@valid_params, :result_url, "https://192.168.0.1/result")
+
+      assert {:error, :invalid_request, [{:result_url, _}]} = PaymentRequest.new(params)
+    end
+
+    test "returns invalid_request when env security_credential tuple cannot be encrypted" do
+      Application.put_env(:daraja, :b2b_security_credential, {"password", "bad-pem"})
+      params = Map.delete(@valid_params, :security_credential)
+
+      assert {:error, :invalid_request, [{:security_credential, :invalid_public_key}]} =
+               PaymentRequest.new(params)
+    end
   end
 
   describe "request/2 auth failure" do

@@ -83,4 +83,40 @@ defmodule Daraja.CallbackURLTest do
     assert {:error, [{:queue_timeout_url, "host must not be a private or metadata address"}]} =
              CallbackURL.validate_all(params, [:queue_timeout_url, :result_url])
   end
+
+  test "validate_all ignores non-binary field values" do
+    assert :ok = CallbackURL.validate_all(%{result_url: nil}, [:result_url])
+  end
+
+  test "rejects malformed URLs" do
+    assert {:error, "must be a valid http or https URL with a host"} =
+             CallbackURL.validate("not-a-url")
+  end
+
+  test "rejects additional private and IPv6 addresses" do
+    assert {:error, "host must not be a private or metadata address"} =
+             CallbackURL.validate("https://172.16.0.1/callback")
+
+    assert {:error, "host must not be a private or metadata address"} =
+             CallbackURL.validate("https://0.0.0.0/callback")
+
+    assert {:error, "host must not be a private or metadata address"} =
+             CallbackURL.validate("https://[::1]/callback")
+
+    assert {:error, "host must not be a private or metadata address"} =
+             CallbackURL.validate("https://[::ffff:192.168.1.1]/callback")
+
+    assert {:error, "host must not be a private or metadata address"} =
+             CallbackURL.validate("https://[fe80::1]/callback")
+  end
+
+  test "accepts public literal IP addresses" do
+    assert :ok = CallbackURL.validate("https://8.8.8.8/callback")
+    assert :ok = CallbackURL.validate("https://[2001:db8::1]/callback")
+  end
+
+  test "rejects .localhost subdomains" do
+    assert {:error, "host is not allowed"} =
+             CallbackURL.validate("https://app.localhost/callback")
+  end
 end

@@ -152,8 +152,13 @@ defmodule Daraja.TokenCacheTest do
 
     Mock.push_response({:ok, 200, [], ~s({"access_token":"short-lived","expires_in":"1"})})
     Mock.push_response({:ok, 200, [], ~s({"access_token":"refetched","expires_in":"1"})})
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"refetched","expires_in":"1"})})
 
     assert {:ok, "short-lived"} = TokenCache.get_token(client, name)
+
+    key = cache_key(client)
+    assert [{^key, {_token, _expires_at, 1}}] = :ets.lookup(name, key)
+
     Process.sleep(1_100)
 
     assert {:ok, "refetched"} = TokenCache.get_token(client, name)
@@ -165,6 +170,7 @@ defmodule Daraja.TokenCacheTest do
     start_supervised!({TokenCache, name: name, ttl: ttl, refresh_before: 0})
 
     Mock.push_response({:ok, 200, [], ~s({"access_token":"no-expiry"})})
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"refetched"})})
     Mock.push_response({:ok, 200, [], ~s({"access_token":"refetched"})})
 
     assert {:ok, "no-expiry"} = TokenCache.get_token(client, name)
@@ -214,6 +220,56 @@ defmodule Daraja.TokenCacheTest do
     :sys.get_state(name)
 
     assert [] = :ets.lookup(name, key)
+  end
+
+  test "refetches via GenServer when ETS entry is expired", %{client: client} do
+    name = unique_name()
+    start_supervised!({TokenCache, name: name})
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"old-tok","expires_in":"3600"})})
+    assert {:ok, "old-tok"} = TokenCache.get_token(client, name)
+
+    key = cache_key(client)
+    past = System.monotonic_time(:second) - 1
+
+    :sys.replace_state(name, fn state ->
+      :ets.insert(state.table, {key, {"old-tok", past, 3600}})
+      state
+    end)
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"fresh","expires_in":"3600"})})
+    assert {:ok, "fresh"} = TokenCache.get_token(client, name)
+  end
+
+  test "handle_call refetches when token expired under GenServer lock", %{client: client} do
+    name = unique_name()
+    start_supervised!({TokenCache, name: name})
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"old-tok","expires_in":"3600"})})
+    assert {:ok, "old-tok"} = TokenCache.get_token(client, name)
+
+    key = cache_key(client)
+    past = System.monotonic_time(:second) - 1
+
+    :sys.replace_state(name, fn state ->
+      :ets.insert(state.table, {key, {"old-tok", past, 3600}})
+      state
+    end)
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"fresh","expires_in":"3600"})})
+    assert {:ok, "fresh"} = GenServer.call(name, {:fetch_and_cache, client})
+  end
+
+  test "ignores refresh messages for unknown cache keys", %{client: client} do
+    name = unique_name()
+    start_supervised!({TokenCache, name: name})
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok","expires_in":"3600"})})
+    assert {:ok, "tok"} = TokenCache.get_token(client, name)
+
+    send(GenServer.whereis(name), {:refresh, {:unknown, :key, <<>>}})
+    assert {:ok, "tok"} = TokenCache.get_token(client, name)
+    assert {:error, :no_response_queued} = Mock.request(:get, "", [], "")
   end
 
   defp unique_name, do: :"test_cache_#{System.unique_integer([:positive])}"

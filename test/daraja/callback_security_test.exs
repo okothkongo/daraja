@@ -158,5 +158,18 @@ defmodule Daraja.CallbackSecurityTest do
                  cidrs: ["10.0.0.0/8"]
                )
     end
+
+    test "returns invalid_ip for unparseable addresses when check_ip is true" do
+      assert {:error, :invalid_ip} = Security.verify(ip: :not_an_ip, check_ip: true)
+      refute Security.safaricom_ip?(:not_an_ip)
+    end
+
+    test "handles edge-case CIDR inputs" do
+      assert Security.safaricom_ip?({10, 0, 0, 5}, ["10.0.0.0/0"])
+      refute Security.safaricom_ip?({10, 0, 0, 5}, ["not-a-cidr"])
+      refute Security.safaricom_ip?({10, 0, 0, 5}, ["999.999.999.999/24"])
+      refute Security.safaricom_ip?({10, 0, 0, 5}, [nil])
+      refute Security.safaricom_ip?("::1")
+    end
   end
 end

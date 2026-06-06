@@ -39,6 +39,40 @@ jobs:
       - run: mix lint
       - run: mix coveralls
 
+  finch_compat:
+    name: Finch compat (${{ matrix.finch }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        finch: [minimum, latest]
+    env:
+      MIX_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: 29
+          elixir-version: 1.20.x
+      - name: Cache build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: 29-1.20.x-finch-${{ matrix.finch }}
+      - name: Resolve Finch version
+        run: |
+          if [ "${{ matrix.finch }}" = "minimum" ]; then
+            sed -i 's/{:finch, "~> 0.18", optional: true}/{:finch, "0.18.0", optional: true}/' mix.exs
+          fi
+          mix deps.get --only test
+          if [ "${{ matrix.finch }}" = "latest" ]; then
+            mix deps.update finch mint
+          fi
+      - run: mix compile --warnings-as-errors
+      - run: mix test
+
   dialyzer:
     name: mix dialyzer
     runs-on: ubuntu-24.04
