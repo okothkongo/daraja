@@ -94,5 +94,60 @@ defmodule Daraja.TokenCacheTest do
     assert {:ok, "tok-custom"} = TokenCache.get_token(client, name)
   end
 
+  test "fetches fresh token when cached token is expired", %{client: client} do
+    name = unique_name()
+    start_supervised!({TokenCache, name: name})
+
+    key = {client.consumer_key, client.environment}
+    :ets.insert(name, {key, {"old-tok", System.monotonic_time(:second) - 1}})
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"fresh","expires_in":"3600"})})
+
+    assert {:ok, "fresh"} = TokenCache.get_token(client, name)
+  end
+
+  test "handles ETS ArgumentError during startup race", %{client: client} do
+    name = unique_name()
+    pid = start_supervised!({TokenCache, name: name})
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok","expires_in":"3600"})})
+
+    # Passing the PID instead of the atom makes :ets.lookup(pid, key) raise
+    # ArgumentError (PID is not an ETS table name), exercising the rescue path.
+    # GenServer.call still reaches the process via PID.
+    assert {:ok, "tok"} = TokenCache.get_token(client, pid)
+  end
+
+  test "returns already-cached token when re-checked under GenServer lock", %{client: client} do
+    name = unique_name()
+    start_supervised!({TokenCache, name: name})
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok","expires_in":"3600"})})
+
+    assert {:ok, "tok"} = TokenCache.get_token(client, name)
+
+    # Directly invoke handle_call, simulating a caller queued behind the first.
+    # It re-checks under the lock, finds a valid token, and returns without fetching.
+    assert {:ok, "tok"} = GenServer.call(name, {:fetch_and_cache, client})
+    assert {:error, :no_response_queued} = Mock.request(:get, "", [], "")
+  end
+
+  test "cleans up token and timer when background refresh fails", %{client: client} do
+    name = unique_name()
+    start_supervised!({TokenCache, name: name})
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok","expires_in":"3600"})})
+    assert {:ok, "tok"} = TokenCache.get_token(client, name)
+
+    key = {client.consumer_key, client.environment}
+    assert [{^key, _}] = :ets.lookup(name, key)
+
+    Mock.push_response({:ok, 401, [], "Unauthorized"})
+    send(GenServer.whereis(name), {:refresh, key, client})
+    :sys.get_state(name)
+
+    assert [] = :ets.lookup(name, key)
+  end
+
   defp unique_name, do: :"test_cache_#{System.unique_integer([:positive])}"
 end
