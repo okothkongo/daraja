@@ -156,6 +156,17 @@ defmodule Daraja.C2BTest do
       assert :short_code in missing
     end
 
+    test "returns invalid_request for unsafe callback URLs", %{client: client} do
+      params =
+        Map.merge(@valid_register_params, %{
+          confirmation_url: "https://169.254.169.254/confirmation",
+          validation_url: "https://example.com/validation"
+        })
+
+      assert {:error, :invalid_request, [{:confirmation_url, _}]} =
+               Daraja.C2B.register_url(client, params)
+    end
+
     test "returns invalid_request listing all missing required fields", %{client: client} do
       assert {:error, :invalid_request, missing} = Daraja.C2B.register_url(client, %{})
 

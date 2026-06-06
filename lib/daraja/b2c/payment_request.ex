@@ -125,7 +125,8 @@ defmodule Daraja.B2C.PaymentRequest do
       |> normalize_keys()
       |> apply_env_fallbacks()
 
-    with {:ok, params} <- resolve_security_credential(params) do
+    with {:ok, params} <- resolve_security_credential(params),
+         :ok <- validate_callback_urls(params) do
       missing = Enum.filter(@required, fn key -> is_nil(params[key]) end)
 
       cond do
@@ -162,6 +163,13 @@ defmodule Daraja.B2C.PaymentRequest do
     case Daraja.SecurityCredential.resolve(params[:security_credential]) do
       {:ok, credential} -> {:ok, %{params | security_credential: credential}}
       {:error, reason} -> {:error, :invalid_request, [{:security_credential, reason}]}
+    end
+  end
+
+  defp validate_callback_urls(params) do
+    case Daraja.CallbackURL.validate_all(params, [:queue_timeout_url, :result_url]) do
+      :ok -> :ok
+      {:error, errors} -> {:error, :invalid_request, errors}
     end
   end
 

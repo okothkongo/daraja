@@ -166,5 +166,12 @@ defmodule Daraja.ExpressTest do
       assert {:error, :invalid_client, missing} = Daraja.Express.request(client, @valid_params)
       assert Enum.sort(missing) == [:business_short_code, :callback_url, :passkey]
     end
+
+    test "returns invalid_client for unsafe callback_url", %{client: client} do
+      client = %{client | callback_url: "https://127.0.0.1/callback"}
+
+      assert {:error, :invalid_client, [{:callback_url, _}]} =
+               Daraja.Express.request(client, @valid_params)
+    end
   end
 end

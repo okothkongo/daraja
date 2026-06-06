@@ -183,6 +183,14 @@ defmodule Daraja.B2CTest do
   end
 
   describe "payment/2 with invalid params" do
+    test "returns invalid_request for unsafe callback URLs", %{client: client} do
+      params =
+        Map.put(@valid_params, :queue_timeout_url, "https://10.0.0.1/timeout")
+
+      assert {:error, :invalid_request, [{:queue_timeout_url, _}]} =
+               Daraja.B2C.payment(client, params)
+    end
+
     test "returns invalid_request when a required field is missing", %{client: client} do
       assert {:error, :invalid_request, missing} =
                Daraja.B2C.payment(client, Map.delete(@valid_params, :party_b))
