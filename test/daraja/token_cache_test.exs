@@ -96,14 +96,27 @@ defmodule Daraja.TokenCacheTest do
 
   test "fetches fresh token when cached token is expired", %{client: client} do
     name = unique_name()
-    start_supervised!({TokenCache, name: name})
+    ttl = 1
+    start_supervised!({TokenCache, name: name, ttl: ttl, refresh_before: 0})
 
-    key = {client.consumer_key, client.environment}
-    :ets.insert(name, {key, {"old-tok", System.monotonic_time(:second) - 1}})
-
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"old-tok","expires_in":"3600"})})
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"fresh","expires_in":"3600"})})
     Mock.push_response({:ok, 200, [], ~s({"access_token":"fresh","expires_in":"3600"})})
 
+    assert {:ok, "old-tok"} = TokenCache.get_token(client, name)
+    Process.sleep(ttl * 1_000 + 100)
+
     assert {:ok, "fresh"} = TokenCache.get_token(client, name)
+  end
+
+  test "rejects external ETS writes", %{client: client} do
+    name = unique_name()
+    start_supervised!({TokenCache, name: name})
+    key = {client.consumer_key, client.environment}
+
+    assert_raise ArgumentError, fn ->
+      :ets.insert(name, {key, {"evil", System.monotonic_time(:second) + 3600}})
+    end
   end
 
   test "handles ETS ArgumentError during startup race", %{client: client} do

@@ -102,6 +102,24 @@ defmodule Daraja.ExpressTest do
       assert {:error, :auth_failed, "Unauthorized"} =
                Daraja.Express.request(client, @valid_params)
     end
+
+    test "returns auth_failed when STK push responds with 401", %{client: client} do
+      Mock.push_response({:ok, 200, [], @auth_success})
+      Mock.push_response({:ok, 401, [], "Unauthorized"})
+
+      assert {:error, :auth_failed, "Unauthorized"} =
+               Daraja.Express.request(client, @valid_params)
+    end
+  end
+
+  describe "request/2 gateway failure" do
+    test "returns http_error on 5xx without parsing the body", %{client: client} do
+      Mock.push_response({:ok, 200, [], @auth_success})
+      Mock.push_response({:ok, 502, [], "<html>Bad Gateway</html>"})
+
+      assert {:error, :http_error, {502, "<html>Bad Gateway</html>"}} =
+               Daraja.Express.request(client, @valid_params)
+    end
   end
 
   describe "request/2 with invalid params" do

@@ -208,7 +208,10 @@ defmodule Daraja.C2B.Callback do
 
   defp parse_error(map) do
     missing =
-      Enum.reject(["TransID", "TransAmount", "BusinessShortCode", "MSISDN"], &Map.has_key?(map, &1))
+      Enum.reject(
+        ["TransID", "TransAmount", "BusinessShortCode", "MSISDN"],
+        &Map.has_key?(map, &1)
+      )
 
     {:error, :invalid_callback, "missing C2B fields: #{Enum.join(missing, ", ")}"}
   end

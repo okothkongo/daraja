@@ -32,6 +32,13 @@ defmodule Daraja.TokenCache do
   ETS tables are owned by the GenServer process. On crash and supervisor
   restart, the old table is gone and a fresh one is created — all cached tokens
   are lost and the next request per client pays a cold network fetch.
+
+  ## ETS access
+
+  The cache table is `:protected`: any process may read (lock-free happy path
+  in `get_token/2`), but only the owning GenServer may insert or delete. This
+  prevents local cache poisoning by unrelated processes while preserving read
+  concurrency.
   """
 
   use GenServer
@@ -99,7 +106,7 @@ defmodule Daraja.TokenCache do
     ttl = Keyword.get(opts, :ttl, @default_ttl)
     refresh_before = Keyword.get(opts, :refresh_before, @default_refresh_before)
 
-    :ets.new(name, [:set, :public, :named_table, read_concurrency: true])
+    :ets.new(name, [:set, :protected, :named_table, read_concurrency: true])
 
     {:ok, %{table: name, ttl: ttl, refresh_before: refresh_before, timers: %{}}}
   end
