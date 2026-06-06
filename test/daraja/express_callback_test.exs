@@ -55,6 +55,11 @@ defmodule Daraja.ExpressCallbackTest do
     assert %Callback.Result{result_code: nil} = Callback.from_map(%{})
   end
 
+  test "parse/1 returns ok for valid payloads and errors for invalid shapes" do
+    assert {:ok, %Callback.Result{result_code: 0}} = Callback.parse(@successful_payload)
+    assert {:error, :invalid_callback, _} = Callback.parse(%{})
+  end
+
   test "accept/0 returns the success acknowledgement map" do
     assert %{"ResultCode" => 0, "ResultDesc" => "Success"} = Callback.accept()
   end

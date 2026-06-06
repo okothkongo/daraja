@@ -87,6 +87,9 @@ defmodule Daraja.B2CCallbackTest do
 
   test "from_map/1 returns an empty Result for unrecognised payloads" do
     assert %Callback.Result{result_code: nil} = Callback.from_map(%{})
+
+    assert {:ok, %Callback.Result{}} = Callback.parse(@successful_payload)
+    assert {:error, :invalid_callback, _} = Callback.parse(%{})
   end
 
   test "sets reference_item to nil when ReferenceData is absent" do

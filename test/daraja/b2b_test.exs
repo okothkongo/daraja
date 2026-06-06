@@ -350,6 +350,11 @@ defmodule Daraja.B2BTest do
       assert %Callback.Result{result_code: nil} = Callback.from_map(%{})
     end
 
+    test "parse/1 returns ok for valid payloads and errors for invalid shapes" do
+      assert {:ok, %Callback.Result{}} = Callback.parse(@successful_callback_payload)
+      assert {:error, :invalid_callback, _} = Callback.parse(%{})
+    end
+
     test "sets reference_item to nil when ReferenceData is absent" do
       payload = %{"Result" => %{"ResultCode" => 0, "TransactionID" => "X1"}}
 

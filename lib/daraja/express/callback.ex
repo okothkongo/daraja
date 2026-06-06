@@ -6,14 +6,24 @@ defmodule Daraja.Express.Callback do
   STK Push callbacks are one-way notifications: M-PESA only needs the merchant
   to acknowledge receipt with `ResultCode: 0`.
 
+  Daraja does **not** sign callbacks. Verify the request with
+  `Daraja.Callback.Security` and deduplicate with `Daraja.Callback.Guard` before
+  treating parsed output as proof of payment. Use `parse/1` on untrusted input;
+  `from_map/1` returns an empty struct for unrecognised shapes.
+
   ## Example
 
-      payload = Jason.decode!(conn.body_params)
-      callback = Daraja.Express.Callback.from_map(payload)
-
-      # ...persist the result...
-
-      json(conn, Daraja.Express.Callback.accept())
+      with :ok <-
+             Daraja.Callback.Security.verify(
+               ip: conn.remote_ip,
+               check_ip: true,
+               shared_secret: callback_secret,
+               provided_secret: conn.params["token"]
+             ),
+           {:ok, callback} <- Daraja.Express.Callback.parse(payload),
+           :ok <- Daraja.Callback.Guard.ensure_fresh(callback.checkout_request_id) do
+        json(conn, Daraja.Express.Callback.accept())
+      end
   """
 
   defmodule Result do
@@ -46,6 +56,9 @@ defmodule Daraja.Express.Callback do
   Successful payloads include a `CallbackMetadata` block with the transaction
   details (Amount, MpesaReceiptNumber, TransactionDate, PhoneNumber). Failed
   payloads omit it.
+
+  Prefer `parse/1` for inbound HTTP requests; `from_map/1` returns an empty
+  struct for unrecognised shapes.
   """
   @spec from_map(map()) :: Result.t()
   def from_map(%{"Body" => %{"stkCallback" => stk}}) when is_map(stk) do
@@ -62,6 +75,19 @@ defmodule Daraja.Express.Callback do
   end
 
   def from_map(_), do: %Result{}
+
+  @doc """
+  Parses an STK Push callback map from an untrusted HTTP request.
+
+  Returns `{:error, :invalid_callback, reason}` when the top-level shape does
+  not match a Daraja STK callback.
+  """
+  @spec parse(map()) :: {:ok, Result.t()} | {:error, :invalid_callback, String.t()}
+  def parse(%{"Body" => %{"stkCallback" => stk}} = map) when is_map(stk) do
+    {:ok, from_map(map)}
+  end
+
+  def parse(_), do: {:error, :invalid_callback, "missing Body.stkCallback"}
 
   @doc """
   Builds the JSON response body used to acknowledge an STK Push callback.

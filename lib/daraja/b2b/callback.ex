@@ -5,6 +5,10 @@ defmodule Daraja.B2B.Callback do
   B2B transactions are asynchronous; this module parses successful and unsuccessful
   callback payloads into typed structs and provides helpers to extract
   `ResultParameters` values by key.
+
+  Verify inbound requests with `Daraja.Callback.Security`, deduplicate on
+  `originator_conversation_id` with `Daraja.Callback.Guard`, and use `parse/1`
+  on untrusted input.
   """
 
   defmodule Result do
@@ -60,6 +64,16 @@ defmodule Daraja.B2B.Callback do
   end
 
   def from_map(_), do: %Result{}
+
+  @doc """
+  Parses a B2B callback map from an untrusted HTTP request.
+  """
+  @spec parse(map()) :: {:ok, Result.t()} | {:error, :invalid_callback, String.t()}
+  def parse(%{"Result" => result_map} = map) when is_map(result_map) do
+    {:ok, from_map(map)}
+  end
+
+  def parse(_), do: {:error, :invalid_callback, "missing Result"}
 
   @doc """
   Builds the JSON response body used to acknowledge a B2B result callback.

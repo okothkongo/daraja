@@ -3,24 +3,27 @@ defmodule Daraja.C2B.Callback do
   Helpers for parsing inbound C2B callback payloads posted by M-PESA to
   the merchant's registered validation and confirmation URLs.
 
+  Daraja does **not** sign callbacks. Verify requests with
+  `Daraja.Callback.Security`, deduplicate on `trans_id` with
+  `Daraja.Callback.Guard`, and use `parse/1` on untrusted input.
+
   ## Validation flow
 
   When External Validation is enabled, M-PESA posts a validation request to
   your `ValidationURL` before completing a transaction. You must respond within
   ~8 seconds using `accept/0` or `reject/1`.
 
-      # In your Phoenix controller or LiveView:
-      payload = Jason.decode!(conn.body_params)
-      callback = Daraja.C2B.Callback.from_map(payload)
+      with :ok <- Daraja.Callback.Security.verify(ip: conn.remote_ip, check_ip: true, ...),
+           {:ok, callback} <- Daraja.C2B.Callback.parse(payload) do
+        response =
+          if valid_account?(callback.bill_ref_number) do
+            Daraja.C2B.Callback.accept()
+          else
+            Daraja.C2B.Callback.reject("C2B00012")
+          end
 
-      response =
-        if valid_account?(callback.bill_ref_number) do
-          Daraja.C2B.Callback.accept()
-        else
-          Daraja.C2B.Callback.reject("C2B00012")
-        end
-
-      json(conn, response)
+        json(conn, response)
+      end
 
   ## Confirmation flow
 
@@ -137,7 +140,7 @@ defmodule Daraja.C2B.Callback do
   distinguished by the presence or absence of an account balance value.
   """
   @spec from_map(map()) :: Validation.t() | Confirmation.t()
-  def from_map(map) do
+  def from_map(map) when is_map(map) do
     fields = build_fields(map)
 
     if map["OrgAccountBalance"] == "" || is_nil(map["OrgAccountBalance"]) do
@@ -146,6 +149,32 @@ defmodule Daraja.C2B.Callback do
       struct(Confirmation, fields)
     end
   end
+
+  @doc """
+  Parses a C2B callback map from an untrusted HTTP request.
+
+  Returns `{:error, :invalid_callback, reason}` when required C2B fields are
+  missing. Distinguish validation vs confirmation by route (recommended) or via
+  `kind/1` on the parsed struct.
+  """
+  @spec parse(map()) ::
+          {:ok, Validation.t() | Confirmation.t()}
+          | {:error, :invalid_callback, String.t()}
+  def parse(map) when is_map(map) do
+    if c2b_callback?(map), do: {:ok, from_map(map)}, else: parse_error(map)
+  end
+
+  def parse(_), do: {:error, :invalid_callback, "expected a map"}
+
+  @doc """
+  Returns `:validation` or `:confirmation` for a parsed C2B callback.
+
+  Prefer separate validation and confirmation URL routes instead of relying on
+  this heuristic alone.
+  """
+  @spec kind(Validation.t() | Confirmation.t()) :: :validation | :confirmation
+  def kind(%Validation{}), do: :validation
+  def kind(%Confirmation{}), do: :confirmation
 
   @doc """
   Builds the JSON response body to accept a validation request.
@@ -172,6 +201,17 @@ defmodule Daraja.C2B.Callback do
   end
 
   def reject(_), do: %{"ResultCode" => "C2B00016", "ResultDesc" => "Other Error"}
+
+  defp c2b_callback?(map) do
+    Map.has_key?(map, "TransID") and Map.has_key?(map, "TransAmount")
+  end
+
+  defp parse_error(map) do
+    missing =
+      Enum.reject(["TransID", "TransAmount", "BusinessShortCode", "MSISDN"], &Map.has_key?(map, &1))
+
+    {:error, :invalid_callback, "missing C2B fields: #{Enum.join(missing, ", ")}"}
+  end
 
   defp build_fields(map) do
     [

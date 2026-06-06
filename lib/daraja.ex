@@ -125,6 +125,19 @@ defmodule Daraja do
           consumer_secret: merchant.consumer_secret
         )
 
+  ## Callback security
+
+  Daraja does not sign inbound webhooks. Use `Daraja.Callback.Security` for IP
+  allowlisting and shared-secret checks, `Daraja.Callback.Guard` for idempotency,
+  and `parse/1` on the product callback modules before fulfilling orders.
+
+  Default callback IP allowlists are community-documented Safaricom ranges—not
+  fetched from the live Daraja API. Override them for production:
+
+      config :daraja,
+        callback_cidrs: ["196.201.212.0/24", "196.201.213.0/24", "196.201.214.0/24"],
+        callback_hosts: ["196.201.214.200", "196.201.212.127"]
+
   ## Token Caching
 
   By default every API call fetches a fresh OAuth token from the network. Add

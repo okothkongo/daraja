@@ -19,6 +19,7 @@ endpoints.
 - OAuth token caching via `Daraja.Supervisor` and `Daraja.TokenCache`
 - Built-in security credential encryption (`Daraja.SecurityCredential`)
 - Callback parsers for STK Push, C2B, B2B, and B2C webhooks
+- Optional callback verification (`Daraja.Callback.Security`) and idempotency (`Daraja.Callback.Guard`)
 - Pluggable HTTP client (`Daraja.HTTPClient`; Finch default)
 
 ## Usage
@@ -142,28 +143,77 @@ iex> Daraja.B2B.request(client, %{
 
 ### Callbacks
 
-Parse inbound webhook payloads posted by M-PESA to your registered URLs:
+Safaricom Daraja callbacks are **unsigned** JSON POSTs. Verify each request
+before treating parsed output as proof of payment. Register HTTPS callback URLs
+with a secret query parameter (for example `?token=...`), allowlist Safaricom
+IP ranges, deduplicate on transaction IDs, and reconcile against your outbound
+API calls when possible.
+
+`Daraja.Callback.Security` ships community-documented Safaricom callback CIDRs
+and explicit host defaults. They are **not** fetched from the live Daraja API—
+verify against Safaricom support or your production logs, then override:
 
 ```elixir
-# STK Push callback
-payload = Jason.decode!(conn.body_params)
-callback = Daraja.Express.Callback.from_map(payload)
-json(conn, Daraja.Express.Callback.accept())
-
-# C2B validation callback
-callback = Daraja.C2B.Callback.from_map(payload)
-
-response =
-  if valid_account?(callback.bill_ref_number) do
-    Daraja.C2B.Callback.accept()
-  else
-    Daraja.C2B.Callback.reject("C2B00012")
-  end
-
-json(conn, response)
+config :daraja,
+  callback_cidrs: ["196.201.212.0/24", "196.201.213.0/24", "196.201.214.0/24"],
+  callback_hosts: ["196.201.214.200", "196.201.212.127"]
 ```
 
-See `Daraja.Express.Callback`, `Daraja.C2B.Callback`, `Daraja.B2B.Callback`,
+Disable `check_ip: true` in sandbox/dev (ngrok and local tunnels will not match
+production Safaricom ranges).
+
+Start an optional idempotency guard:
+
+```elixir
+children = [
+  {Daraja.Callback.Guard, []}
+]
+```
+
+Parse and verify inbound webhook payloads:
+
+```elixir
+callback_secret = Application.fetch_env!(:my_app, :mpesa_callback_secret)
+payload = conn.body_params
+
+with :ok <-
+       Daraja.Callback.Security.verify(
+         ip: conn.remote_ip,
+         check_ip: true,
+         shared_secret: callback_secret,
+         provided_secret: conn.params["token"]
+       ),
+     {:ok, callback} <- Daraja.Express.Callback.parse(payload),
+     :ok <- Daraja.Callback.Guard.ensure_fresh(callback.checkout_request_id) do
+  # fulfil order, persist receipt, etc.
+  json(conn, Daraja.Express.Callback.accept())
+else
+  {:error, :untrusted_ip} -> send_resp(conn, 403, "Forbidden")
+  {:error, :invalid_secret} -> send_resp(conn, 403, "Forbidden")
+  {:error, :invalid_callback, _} -> send_resp(conn, 400, "Bad Request")
+  {:error, :duplicate} -> json(conn, Daraja.Express.Callback.accept())
+end
+```
+
+C2B validation example:
+
+```elixir
+with :ok <- Daraja.Callback.Security.verify(ip: conn.remote_ip, check_ip: true, ...),
+     {:ok, callback} <- Daraja.C2B.Callback.parse(payload),
+     :ok <- Daraja.Callback.Guard.ensure_fresh(callback.trans_id) do
+  response =
+    if valid_account?(callback.bill_ref_number) do
+      Daraja.C2B.Callback.accept()
+    else
+      Daraja.C2B.Callback.reject("C2B00012")
+    end
+
+  json(conn, response)
+end
+```
+
+See `Daraja.Callback.Security`, `Daraja.Callback.Guard`,
+`Daraja.Express.Callback`, `Daraja.C2B.Callback`, `Daraja.B2B.Callback`,
 and `Daraja.B2C.Callback` for full details.
 
 ## Installation

@@ -308,6 +308,29 @@ defmodule Daraja.C2BTest do
     end
   end
 
+  describe "Callback.parse/1" do
+    test "returns ok for valid C2B payloads and errors for invalid shapes" do
+      assert {:ok, %Callback.Validation{}} =
+               Callback.parse(%{
+                 "TransID" => "RKL51ZDR4F",
+                 "TransAmount" => "5.00",
+                 "BusinessShortCode" => "600966",
+                 "MSISDN" => "254700000000"
+               })
+
+      assert {:error, :invalid_callback, reason} = Callback.parse(%{})
+      assert reason =~ "TransID"
+    end
+
+    test "kind/1 distinguishes validation and confirmation structs" do
+      validation = %Callback.Validation{}
+      confirmation = %Callback.Confirmation{}
+
+      assert Callback.kind(validation) == :validation
+      assert Callback.kind(confirmation) == :confirmation
+    end
+  end
+
   describe "Callback.accept/0" do
     test "returns the accepted result map" do
       assert %{"ResultCode" => "0", "ResultDesc" => "Accepted"} = Callback.accept()
