@@ -21,7 +21,7 @@ defmodule Daraja.B2C.PaymentRequest do
 
   `security_credential` accepts either a pre-encrypted Base64 string or a
   `{initiator_password, pem}` tuple. When a tuple is provided, encryption is
-  handled internally via `Daraja.B2C.SecurityCredential.encrypt/2`:
+  handled internally via `Daraja.SecurityCredential.encrypt/2`:
 
       # Pre-encrypted (useful when you encrypt once at deploy time):
       %{security_credential: "base64-encoded-credential", ...}
@@ -29,9 +29,9 @@ defmodule Daraja.B2C.PaymentRequest do
       # Auto-encrypt (convenient for sandbox/dev):
       %{security_credential: {"my-initiator-password", File.read!("sandbox.cer")}, ...}
 
-  The tuple form is sugar over calling `Daraja.B2C.SecurityCredential.encrypt/2`
+  The tuple form is sugar over calling `Daraja.SecurityCredential.encrypt/2`
   inside `PaymentRequest.new/1`. In production, prefer pre-encrypting with
-  `Daraja.B2C.SecurityCredential.encrypt/2` and storing only the resulting Base64
+  `Daraja.SecurityCredential.encrypt/2` and storing only the resulting Base64
   string — so plaintext passwords never live in application state at runtime.
 
   ## Application env fallbacks
@@ -114,7 +114,7 @@ defmodule Daraja.B2C.PaymentRequest do
                atom()
                | {:command_id, String.t()}
                | {:security_credential,
-                  Daraja.B2C.SecurityCredential.encrypt_error() | :invalid_format}
+                  Daraja.SecurityCredential.encrypt_error() | :invalid_format}
              ]}
   def new(params) when is_map(params) do
     params =
@@ -156,7 +156,7 @@ defmodule Daraja.B2C.PaymentRequest do
   end
 
   defp resolve_security_credential(params) do
-    case Daraja.B2C.SecurityCredential.resolve(params[:security_credential]) do
+    case Daraja.SecurityCredential.resolve(params[:security_credential]) do
       {:ok, credential} -> {:ok, %{params | security_credential: credential}}
       {:error, reason} -> {:error, :invalid_request, [{:security_credential, reason}]}
     end

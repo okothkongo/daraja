@@ -1,11 +1,10 @@
-defmodule Daraja.B2C.SecurityCredential do
+defmodule Daraja.SecurityCredential do
   @moduledoc """
-  Utilities for building B2C (and B2B) security credentials.
+  Utilities for building Daraja security credentials.
 
   Safaricom expects the initiator password encrypted with the portal-provided
-  certificate/public key and Base64 encoded.
-
-  `resolve/1` is used by `PaymentRequest` modules; also callable directly.
+  certificate/public key and Base64 encoded. Used by B2B and B2C `PaymentRequest`
+  modules; also callable directly.
   """
 
   @type encrypt_error :: :invalid_public_key | :encryption_failed

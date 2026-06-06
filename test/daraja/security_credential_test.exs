@@ -1,7 +1,7 @@
-defmodule Daraja.B2CSecurityCredentialTest do
+defmodule Daraja.SecurityCredentialTest do
   use ExUnit.Case, async: true
 
-  alias Daraja.B2C.SecurityCredential
+  alias Daraja.SecurityCredential
 
   @cert_pem File.read!("test/support/fixtures/security_credential_cert.pem")
   @key_pem File.read!("test/support/fixtures/security_credential_key.pem")
