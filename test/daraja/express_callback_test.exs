@@ -51,8 +51,8 @@ defmodule Daraja.ExpressCallbackTest do
     assert result.callback_metadata_map == %{}
   end
 
-  test "from_map/1 returns an empty Result for unrecognised payloads" do
-    assert %Callback.Result{result_code: nil} = Callback.from_map(%{})
+  test "from_map/1 rejects unrecognised payloads" do
+    assert_raise FunctionClauseError, fn -> Callback.from_map(%{}) end
   end
 
   test "parse/1 returns ok for valid payloads and errors for invalid shapes" do
@@ -90,6 +90,27 @@ defmodule Daraja.ExpressCallbackTest do
 
     result = Callback.from_map(payload)
     assert result.callback_metadata == []
+  end
+
+  test "ignores malformed entries in a mixed CallbackMetadata Item list" do
+    payload = %{
+      "Body" => %{
+        "stkCallback" => %{
+          "ResultCode" => 0,
+          "CallbackMetadata" => %{
+            "Item" => [
+              %{"Name" => "Amount", "Value" => 1},
+              "oops",
+              %{"unexpected" => true}
+            ]
+          }
+        }
+      }
+    }
+
+    result = Callback.from_map(payload)
+    assert result.callback_metadata == [%{name: "Amount", value: 1}]
+    assert result.callback_metadata_map == %{"Amount" => 1}
   end
 
   test "callback_metadata_map/1 returns an empty map for nil" do

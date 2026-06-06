@@ -4,8 +4,9 @@ defmodule Daraja.Express.Request do
 
   Required fields: `amount`, `phone_number`, `account_reference`.
 
-  Phone number must be in international format without the `+`, e.g. `"254712345678"`.
+  Phone numbers in local `07XXXXXXXX` form are normalized to `254XXXXXXXXX`.
   Account reference is displayed to the customer in the USSD prompt (max 12 chars).
+  Transaction description is optional (max 13 chars).
   """
 
   @type t :: %__MODULE__{
@@ -36,6 +37,7 @@ defmodule Daraja.Express.Request do
                | {:amount, String.t()}
                | {:phone_number, String.t()}
                | {:account_reference, String.t()}
+               | {:transaction_desc, String.t()}
                | {:transaction_type, String.t()}
              ]}
   def new(params) when is_map(params) do
@@ -51,9 +53,16 @@ defmodule Daraja.Express.Request do
         {:error, :invalid_request,
          [elem(Daraja.RequestValidation.validate_amount(params[:amount]), 1)]}
 
-      match?({:error, _}, Daraja.RequestValidation.validate_msisdn(params[:phone_number])) ->
+      match?({:error, _}, Daraja.RequestValidation.coerce_msisdn(params[:phone_number])) ->
         {:error, :invalid_request,
-         [elem(Daraja.RequestValidation.validate_msisdn(params[:phone_number]), 1)]}
+         [elem(Daraja.RequestValidation.coerce_msisdn(params[:phone_number]), 1)]}
+
+      match?(
+        {:error, _},
+        Daraja.RequestValidation.validate_transaction_desc(params[:transaction_desc])
+      ) ->
+        {:error, :invalid_request,
+         [elem(Daraja.RequestValidation.validate_transaction_desc(params[:transaction_desc]), 1)]}
 
       not is_binary(params[:account_reference]) ->
         {:error, :invalid_request,
@@ -73,10 +82,12 @@ defmodule Daraja.Express.Request do
          ]}
 
       true ->
+        {:ok, phone_number} = Daraja.RequestValidation.coerce_msisdn(params[:phone_number])
+
         {:ok,
          %__MODULE__{
            amount: params[:amount],
-           phone_number: params[:phone_number],
+           phone_number: phone_number,
            account_reference: params[:account_reference],
            transaction_desc: params[:transaction_desc],
            transaction_type: transaction_type

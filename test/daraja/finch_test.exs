@@ -30,13 +30,12 @@ defmodule Daraja.HTTPClient.FinchTest do
     assert {:error, :no_response_queued} = Mock.request(:get, "http://example.com", [], "")
   end
 
-  test "request/4 raises when the configured Finch pool is not running" do
+  test "request/4 returns an error when the configured Finch pool is not running" do
     Application.put_env(:daraja, :finch_name, Daraja.FinchMissing)
     on_exit(fn -> Application.delete_env(:daraja, :finch_name) end)
 
-    assert_raise RuntimeError, ~r/is not running/, fn ->
-      FinchClient.request(:get, "http://127.0.0.1/", [], "")
-    end
+    assert {:error, {:finch_pool_not_started, Daraja.FinchMissing}} =
+             FinchClient.request(:get, "http://127.0.0.1/", [], "")
   end
 
   test "request/4 uses a custom :finch_name pool" do

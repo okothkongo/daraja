@@ -63,8 +63,6 @@ defmodule Daraja.B2C.Callback do
     }
   end
 
-  def from_map(_), do: %Result{}
-
   @doc """
   Parses a B2C callback map from an untrusted HTTP request.
   """
@@ -114,19 +112,13 @@ defmodule Daraja.B2C.Callback do
   defp extract_result_parameters(result_map) do
     result_map
     |> get_in(["ResultParameters", "ResultParameter"])
-    |> normalize_result_parameter_list()
-    |> Enum.map(fn %{"Key" => key, "Value" => value} -> %{key: key, value: value} end)
+    |> Daraja.Callback.Items.extract_key_value()
   end
 
-  defp normalize_result_parameter_list(nil), do: []
-  defp normalize_result_parameter_list(list) when is_list(list), do: list
-  defp normalize_result_parameter_list(map) when is_map(map), do: [map]
-  defp normalize_result_parameter_list(_), do: []
-
   defp extract_reference_item(result_map) do
-    case get_in(result_map, ["ReferenceData", "ReferenceItem"]) do
-      %{"Key" => key, "Value" => value} -> %{key: key, value: value}
-      _ -> nil
-    end
+    result_map
+    |> get_in(["ReferenceData", "ReferenceItem"])
+    |> Daraja.Callback.Items.extract_key_value()
+    |> List.first()
   end
 end

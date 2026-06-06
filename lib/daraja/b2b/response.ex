@@ -33,6 +33,12 @@ defmodule Daraja.B2B.Response do
     defstruct [:request_id, :error_code, :error_message]
   end
 
+  @doc """
+  Parses a raw response map into a `Success` or `Error` struct.
+
+  Note: Safaricom may return the misspelled key `OriginatorCoversationID`
+  (missing the second 'n'). Both spellings are handled for resilience.
+  """
   alias Daraja.ResponseCode
 
   @spec from_map(map()) :: Success.t() | Error.t()
@@ -40,7 +46,8 @@ defmodule Daraja.B2B.Response do
     if ResponseCode.success?(map) do
       %Success{
         conversation_id: map["ConversationID"],
-        originator_conversation_id: map["OriginatorConversationID"],
+        originator_conversation_id:
+          map["OriginatorCoversationID"] || map["OriginatorConversationID"],
         response_code: map["ResponseCode"],
         response_description: map["ResponseDescription"]
       }

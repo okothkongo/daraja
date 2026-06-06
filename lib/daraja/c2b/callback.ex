@@ -5,7 +5,8 @@ defmodule Daraja.C2B.Callback do
 
   Daraja does **not** sign callbacks. Verify requests with
   `Daraja.Callback.Security`, deduplicate on `trans_id` with
-  `Daraja.Callback.Guard`, and use `parse/1` on untrusted input.
+  `Daraja.Callback.Guard`, and use `parse_validation/1` or
+  `parse_confirmation/1` on untrusted input from the matching route.
 
   ## Validation flow
 
@@ -133,25 +134,15 @@ defmodule Daraja.C2B.Callback do
   }
 
   @doc """
-  Parses a raw callback map into a `Validation` or `Confirmation` struct.
+  Parses a raw callback map into a `%Validation{}` or `%Confirmation{}` struct.
 
-  Validation requests have an empty `OrgAccountBalance`; confirmation requests
-  carry the updated balance. Both share the same field layout, so they are
-  distinguished by the presence or absence of an account balance value.
-
-  Prefer `parse_validation/1` and `parse_confirmation/1` from the respective
-  HTTP routes instead of inferring message type from payload content alone.
+  Pass `:validation` or `:confirmation` to match the HTTP route that received
+  the callback. Do not infer message type from payload fields such as
+  `OrgAccountBalance`.
   """
-  @spec from_map(map()) :: Validation.t() | Confirmation.t()
-  def from_map(map) when is_map(map) do
-    fields = build_fields(map)
-
-    if map["OrgAccountBalance"] == "" || is_nil(map["OrgAccountBalance"]) do
-      struct(Validation, fields)
-    else
-      struct(Confirmation, fields)
-    end
-  end
+  @spec from_map(map(), :validation | :confirmation) :: Validation.t() | Confirmation.t()
+  def from_map(map, :validation) when is_map(map), do: struct(Validation, build_fields(map))
+  def from_map(map, :confirmation) when is_map(map), do: struct(Confirmation, build_fields(map))
 
   @doc """
   Parses a C2B validation callback map into a `%Validation{}` struct.
@@ -173,18 +164,16 @@ defmodule Daraja.C2B.Callback do
   @doc """
   Parses a C2B callback map from an untrusted HTTP request.
 
-  Returns `{:error, :invalid_callback, reason}` when required C2B fields are
-  missing. Distinguish validation vs confirmation by route (recommended) or via
-  `kind/1` on the parsed struct.
-
-  Prefer `parse_validation/1` on your validation URL and `parse_confirmation/1`
-  on your confirmation URL.
+  Returns `{:error, :ambiguous_callback, reason}` because validation and
+  confirmation payloads share the same shape. Use `parse_validation/1` on your
+  validation URL and `parse_confirmation/1` on your confirmation URL instead.
   """
   @spec parse(map()) ::
-          {:ok, Validation.t() | Confirmation.t()}
-          | {:error, :invalid_callback, String.t()}
+          {:error, :ambiguous_callback, String.t()} | {:error, :invalid_callback, String.t()}
   def parse(map) when is_map(map) do
-    if c2b_callback?(map), do: {:ok, from_map(map)}, else: parse_error(map)
+    if c2b_callback?(map),
+      do: {:error, :ambiguous_callback, ambiguous_callback_message()},
+      else: parse_error(map)
   end
 
   def parse(_), do: {:error, :invalid_callback, "expected a map"}
@@ -216,9 +205,6 @@ defmodule Daraja.C2B.Callback do
 
   @doc """
   Returns `:validation` or `:confirmation` for a parsed C2B callback.
-
-  Prefer separate validation and confirmation URL routes instead of relying on
-  this heuristic alone.
   """
   @spec kind(Validation.t() | Confirmation.t()) :: :validation | :confirmation
   def kind(%Validation{}), do: :validation
@@ -252,6 +238,10 @@ defmodule Daraja.C2B.Callback do
 
   defp c2b_callback?(map) do
     Map.has_key?(map, "TransID") and Map.has_key?(map, "TransAmount")
+  end
+
+  defp ambiguous_callback_message do
+    "use parse_validation/1 or parse_confirmation/1 on the matching route"
   end
 
   defp parse_error(map) do

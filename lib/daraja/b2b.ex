@@ -72,6 +72,7 @@ defmodule Daraja.B2B do
         "SecurityCredential" => request.security_credential,
         "CommandID" => request.command_id,
         "SenderIdentifierType" => request.sender_identifier_type,
+        # Safaricom API typo — must not be "ReceiverIdentifierType"
         "RecieverIdentifierType" => request.receiver_identifier_type,
         "Amount" => request.amount,
         "PartyA" => request.party_a,

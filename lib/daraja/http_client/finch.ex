@@ -15,6 +15,9 @@ if Code.ensure_loaded?(Finch) do
           {Finch, name: MyApp.Finch}
         ]
 
+    If the pool is not running, `request/4` returns
+    `{:error, {:finch_pool_not_started, pool}}`.
+
     Configure Daraja to use this adapter (this is the default, so the config is optional):
 
         config :daraja, :http_client, Daraja.HTTPClient.Finch
@@ -34,19 +37,13 @@ if Code.ensure_loaded?(Finch) do
       pool = Application.get_env(:daraja, :finch_name, Daraja.Finch)
 
       unless Process.whereis(pool) do
-        raise """
-        Finch pool #{inspect(pool)} is not running. Add it to your supervision tree:
-
-            children = [
-              {Finch, name: #{inspect(pool)}}
-            ]
-
-        If you are using a custom pool name, set it in your config:
-
-            config :daraja, :finch_name, #{inspect(pool)}
-        """
+        {:error, {:finch_pool_not_started, pool}}
+      else
+        do_request(method, url, headers, body, pool)
       end
+    end
 
+    defp do_request(method, url, headers, body, pool) do
       method
       |> Finch.build(url, headers, body)
       |> Finch.request(pool)

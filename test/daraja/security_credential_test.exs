@@ -123,6 +123,10 @@ defmodule Daraja.SecurityCredentialTest do
       assert {:ok, "already-encrypted"} = SecurityCredential.resolve("already-encrypted")
     end
 
+    test "rejects an empty binary credential" do
+      assert {:error, :invalid_format} = SecurityCredential.resolve("")
+    end
+
     test "passes nil through as {:ok, nil}" do
       assert {:ok, nil} = SecurityCredential.resolve(nil)
     end

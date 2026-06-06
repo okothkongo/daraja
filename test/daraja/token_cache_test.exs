@@ -272,6 +272,18 @@ defmodule Daraja.TokenCacheTest do
     assert {:error, :no_response_queued} = Mock.request(:get, "", [], "")
   end
 
+  test "raises when refresh_before is greater than or equal to ttl" do
+    assert {:error, {%ArgumentError{message: msg}, _}} =
+             GenServer.start(TokenCache, name: unique_name(), ttl: 60, refresh_before: 120)
+
+    assert msg =~ "refresh_before (120) must be less than ttl (60)"
+
+    assert {:error, {%ArgumentError{message: msg2}, _}} =
+             GenServer.start(TokenCache, name: unique_name(), ttl: 60, refresh_before: 60)
+
+    assert msg2 =~ "refresh_before (60) must be less than ttl (60)"
+  end
+
   defp unique_name, do: :"test_cache_#{System.unique_integer([:positive])}"
 
   defp cache_key(%Client{} = client) do

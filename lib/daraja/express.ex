@@ -24,12 +24,16 @@ defmodule Daraja.Express do
   (`Base64(short_code <> passkey <> timestamp)`). Anyone with a captured request
   body can recover the passkey. Never log STK request bodies; ensure TLS-only
   transport and redact `Password` in any custom HTTP client logging.
+
+  The `Timestamp` field and password must use East Africa Time (EAT, UTC+3),
+  not the host machine's local timezone or raw UTC.
   """
 
   alias Daraja.Client
   alias Daraja.Express.{Request, Response}
 
   @stk_push_path "/mpesa/stkpush/v1/processrequest"
+  @eat_utc_offset_seconds 3 * 60 * 60
 
   @stk_client_fields [:business_short_code, :passkey, :callback_url]
 
@@ -57,9 +61,18 @@ defmodule Daraja.Express do
     end
   end
 
+  @doc false
+  @spec stk_timestamp() :: String.t()
+  def stk_timestamp do
+    DateTime.utc_now()
+    |> DateTime.add(@eat_utc_offset_seconds, :second)
+    |> DateTime.to_naive()
+    |> Calendar.strftime("%Y%m%d%H%M%S")
+  end
+
   defp do_request(%Client{} = client, %Request{} = request) do
     with :ok <- validate_client(client) do
-      timestamp = Calendar.strftime(NaiveDateTime.utc_now(), "%Y%m%d%H%M%S")
+      timestamp = stk_timestamp()
       short_code = client.business_short_code
       password = Base.encode64(short_code <> client.passkey <> timestamp)
 

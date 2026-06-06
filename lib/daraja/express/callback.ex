@@ -6,10 +6,9 @@ defmodule Daraja.Express.Callback do
   STK Push callbacks are one-way notifications: M-PESA only needs the merchant
   to acknowledge receipt with `ResultCode: 0`.
 
-  Daraja does **not** sign callbacks. Verify the request with
+  Daraja does **not** sign callbacks.   Verify the request with
   `Daraja.Callback.Security` and deduplicate with `Daraja.Callback.Guard` before
-  treating parsed output as proof of payment. Use `parse/1` on untrusted input;
-  `from_map/1` returns an empty struct for unrecognised shapes.
+  treating parsed output as proof of payment. Use `parse/1` on untrusted input.
 
   ## Example
 
@@ -57,8 +56,8 @@ defmodule Daraja.Express.Callback do
   details (Amount, MpesaReceiptNumber, TransactionDate, PhoneNumber). Failed
   payloads omit it.
 
-  Prefer `parse/1` for inbound HTTP requests; `from_map/1` returns an empty
-  struct for unrecognised shapes.
+  Prefer `parse/1` for inbound HTTP requests. `from_map/1` accepts only payloads
+  with a `Body.stkCallback` envelope.
   """
   @spec from_map(map()) :: Result.t()
   def from_map(%{"Body" => %{"stkCallback" => stk}}) when is_map(stk) do
@@ -73,8 +72,6 @@ defmodule Daraja.Express.Callback do
       callback_metadata_map: callback_metadata_map(items)
     }
   end
-
-  def from_map(_), do: %Result{}
 
   @doc """
   Parses an STK Push callback map from an untrusted HTTP request.
@@ -119,12 +116,6 @@ defmodule Daraja.Express.Callback do
   defp extract_metadata_items(stk) do
     stk
     |> get_in(["CallbackMetadata", "Item"])
-    |> normalize_item_list()
-    |> Enum.map(fn %{"Name" => name, "Value" => value} -> %{name: name, value: value} end)
+    |> Daraja.Callback.Items.extract_name_value()
   end
-
-  defp normalize_item_list(nil), do: []
-  defp normalize_item_list(list) when is_list(list), do: list
-  defp normalize_item_list(map) when is_map(map), do: [map]
-  defp normalize_item_list(_), do: []
 end

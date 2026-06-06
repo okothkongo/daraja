@@ -72,4 +72,30 @@ defmodule Daraja.ResponseCodeTest do
              } = C2BResponse.from_map(map)
     end
   end
+
+  describe "from_map/1 accepts Safaricom OriginatorCoversationID typo" do
+    test "B2B" do
+      map = %{
+        "ConversationID" => "AG_123",
+        "OriginatorCoversationID" => "orig-typo",
+        "ResponseCode" => "0",
+        "ResponseDescription" => "Accepted"
+      }
+
+      assert %B2BResponse.Success{originator_conversation_id: "orig-typo"} =
+               B2BResponse.from_map(map)
+    end
+
+    test "B2C" do
+      map = %{
+        "ConversationID" => "AG_123",
+        "OriginatorCoversationID" => "orig-typo",
+        "ResponseCode" => "0",
+        "ResponseDescription" => "Accepted"
+      }
+
+      assert %B2CResponse.Success{originator_conversation_id: "orig-typo"} =
+               B2CResponse.from_map(map)
+    end
+  end
 end

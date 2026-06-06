@@ -40,6 +40,7 @@ defmodule Daraja.SecurityCredential do
   @spec resolve(String.t() | {String.t(), String.t()} | nil | term()) ::
           {:ok, String.t() | nil} | {:error, encrypt_error() | :invalid_format}
   def resolve(nil), do: {:ok, nil}
+  def resolve(""), do: {:error, :invalid_format}
   def resolve(credential) when is_binary(credential), do: {:ok, credential}
 
   def resolve({password, pem}) when is_binary(password) and is_binary(pem),

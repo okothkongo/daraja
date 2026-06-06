@@ -385,8 +385,8 @@ defmodule Daraja.B2BTest do
       assert %{"ResultCode" => 0, "ResultDesc" => "Success"} = Callback.accept()
     end
 
-    test "from_map/1 returns an empty Result for unrecognised payloads" do
-      assert %Callback.Result{result_code: nil} = Callback.from_map(%{})
+    test "from_map/1 rejects unrecognised payloads" do
+      assert_raise FunctionClauseError, fn -> Callback.from_map(%{}) end
     end
 
     test "parse/1 returns ok for valid payloads and errors for invalid shapes" do
@@ -402,6 +402,27 @@ defmodule Daraja.B2BTest do
 
       result = Callback.from_map(payload)
       assert result.reference_item == nil
+    end
+
+    test "extracts reference_item from a list of ReferenceItem entries" do
+      payload = %{
+        "Result" => %{
+          "ResultCode" => 0,
+          "ReferenceData" => %{
+            "ReferenceItem" => [
+              %{"Key" => "QueueTimeoutURL", "Value" => "https://example.com/timeout"},
+              %{"Key" => "OtherKey", "Value" => "other"}
+            ]
+          }
+        }
+      }
+
+      result = Callback.from_map(payload)
+
+      assert result.reference_item == %{
+               key: "QueueTimeoutURL",
+               value: "https://example.com/timeout"
+             }
     end
 
     test "flattens a single ResultParameter object (not wrapped in a list)" do
@@ -422,6 +443,23 @@ defmodule Daraja.B2BTest do
 
       result = Callback.from_map(payload)
       assert result.result_parameters == []
+    end
+
+    test "ignores malformed entries in a mixed ResultParameter list" do
+      payload = %{
+        "Result" => %{
+          "ResultParameters" => %{
+            "ResultParameter" => [
+              %{"Key" => "TransactionReceipt", "Value" => "SG632NMUAB"},
+              "oops",
+              %{"unexpected" => true}
+            ]
+          }
+        }
+      }
+
+      result = Callback.from_map(payload)
+      assert result.result_parameters == [%{key: "TransactionReceipt", value: "SG632NMUAB"}]
     end
 
     test "result_parameters_map/1 returns an empty map for nil" do

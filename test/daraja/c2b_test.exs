@@ -59,9 +59,7 @@ defmodule Daraja.C2BTest do
     {:ok, client: client}
   end
 
-  # ---------------------------------------------------------------------------
-  # register_url/2
-  # ---------------------------------------------------------------------------
+
 
   describe "register_url/2 with valid params" do
     test "returns Success struct on happy path", %{client: client} do
@@ -187,9 +185,7 @@ defmodule Daraja.C2BTest do
     end
   end
 
-  # ---------------------------------------------------------------------------
-  # simulate/2
-  # ---------------------------------------------------------------------------
+
 
   describe "simulate/2 with valid params" do
     test "returns Success struct on happy path", %{client: client} do
@@ -304,15 +300,14 @@ defmodule Daraja.C2BTest do
 
     test "returns invalid_request for invalid msisdn", %{client: client} do
       assert {:error, :invalid_request, [{:msisdn, _}]} =
-               Daraja.C2B.simulate(client, %{@valid_simulate_params | msisdn: "0712345678"})
+               Daraja.C2B.simulate(client, %{@valid_simulate_params | msisdn: "12345"})
     end
   end
 
-  # ---------------------------------------------------------------------------
-  # Callback helpers
-  # ---------------------------------------------------------------------------
 
-  describe "Callback.from_map/1" do
+
+
+  describe "Callback.from_map/2" do
     @validation_payload %{
       "TransactionType" => "Pay Bill",
       "TransID" => "RKL51ZDR4F",
@@ -332,7 +327,7 @@ defmodule Daraja.C2BTest do
     @confirmation_payload Map.put(@validation_payload, "OrgAccountBalance", "25.00")
 
     test "parses a validation payload into a Validation struct" do
-      assert %Callback.Validation{} = result = Callback.from_map(@validation_payload)
+      assert %Callback.Validation{} = result = Callback.from_map(@validation_payload, :validation)
       assert result.trans_id == "RKL51ZDR4F"
       assert result.trans_amount == "5.00"
       assert result.bill_ref_number == "Sample Transaction"
@@ -341,9 +336,19 @@ defmodule Daraja.C2BTest do
     end
 
     test "parses a confirmation payload into a Confirmation struct" do
-      assert %Callback.Confirmation{} = result = Callback.from_map(@confirmation_payload)
+      assert %Callback.Confirmation{} =
+               result = Callback.from_map(@confirmation_payload, :confirmation)
+
       assert result.trans_id == "RKL51ZDR4F"
       assert result.org_account_balance == "25.00"
+    end
+
+    test "classifies by route, not OrgAccountBalance" do
+      assert %Callback.Validation{org_account_balance: "25.00"} =
+               Callback.from_map(@confirmation_payload, :validation)
+
+      assert %Callback.Confirmation{org_account_balance: ""} =
+               Callback.from_map(@validation_payload, :confirmation)
     end
 
     test "from_validation_map/1 always returns Validation regardless of OrgAccountBalance" do
@@ -365,8 +370,9 @@ defmodule Daraja.C2BTest do
       "MSISDN" => "254700000000"
     }
 
-    test "returns ok for valid C2B payloads and errors for invalid shapes" do
-      assert {:ok, %Callback.Validation{}} = Callback.parse(@valid_c2b_payload)
+    test "returns ambiguous_callback for valid C2B payloads and errors for invalid shapes" do
+      assert {:error, :ambiguous_callback, reason} = Callback.parse(@valid_c2b_payload)
+      assert reason =~ "parse_validation/1"
 
       assert {:error, :invalid_callback, reason} = Callback.parse(%{})
       assert reason =~ "TransID"

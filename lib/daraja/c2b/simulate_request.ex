@@ -44,17 +44,19 @@ defmodule Daraja.C2B.SimulateRequest do
         {:error, :invalid_request,
          [elem(Daraja.RequestValidation.validate_amount(params[:amount]), 1)]}
 
-      match?({:error, _}, Daraja.RequestValidation.validate_msisdn(params[:msisdn], :msisdn)) ->
+      match?({:error, _}, Daraja.RequestValidation.coerce_msisdn(params[:msisdn], :msisdn)) ->
         {:error, :invalid_request,
-         [elem(Daraja.RequestValidation.validate_msisdn(params[:msisdn], :msisdn), 1)]}
+         [elem(Daraja.RequestValidation.coerce_msisdn(params[:msisdn], :msisdn), 1)]}
 
       true ->
+        {:ok, msisdn} = Daraja.RequestValidation.coerce_msisdn(params[:msisdn], :msisdn)
+
         {:ok,
          %__MODULE__{
            short_code: params[:short_code],
            command_id: params[:command_id],
            amount: params[:amount],
-           msisdn: params[:msisdn],
+           msisdn: msisdn,
            bill_ref_number: params[:bill_ref_number]
          }}
     end

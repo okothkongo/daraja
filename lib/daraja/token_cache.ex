@@ -26,8 +26,9 @@ defmodule Daraja.TokenCache do
   `:refresh_before` (default 120 s) controls how many seconds before expiry
   the cache proactively fetches a fresh token in the background.
 
-  `refresh_before` should be less than the effective token lifetime. When
-  `expires_in` is shorter than `refresh_before`, refresh is scheduled immediately.
+  `refresh_before` should be less than the configured `:ttl` fallback and the
+  effective token lifetime. When `expires_in` is shorter than `refresh_before`,
+  refresh is scheduled immediately. `init/1` raises when `refresh_before >= ttl`.
 
   ## Crash and restart
 
@@ -127,6 +128,11 @@ defmodule Daraja.TokenCache do
     name = Keyword.get(opts, :name, __MODULE__)
     ttl = Keyword.get(opts, :ttl, @default_ttl)
     refresh_before = Keyword.get(opts, :refresh_before, @default_refresh_before)
+
+    if refresh_before >= ttl do
+      raise ArgumentError,
+            "invalid TokenCache config: refresh_before (#{refresh_before}) must be less than ttl (#{ttl})"
+    end
 
     :ets.new(name, [:set, :protected, :named_table, read_concurrency: true])
 
