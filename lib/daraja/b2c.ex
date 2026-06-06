@@ -41,7 +41,7 @@ defmodule Daraja.B2C do
   Required params:
   - `originator_conversation_id`
   - `initiator_name`
-  - `security_credential`
+  - `security_credential` — pre-encrypted Base64 string or `{password, pem}` tuple (auto-encrypted)
   - `command_id`
   - `amount`
   - `party_a`

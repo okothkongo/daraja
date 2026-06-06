@@ -18,10 +18,29 @@ defmodule Daraja.B2B.PaymentRequest do
   Optional fields:
   - `account_reference`
 
+  ## security_credential
+
+  `security_credential` accepts either a pre-encrypted Base64 string or a
+  `{initiator_password, pem}` tuple. When a tuple is provided, encryption is
+  handled internally via `Daraja.B2C.SecurityCredential.encrypt/2`:
+
+      # Pre-encrypted (useful when you encrypt once at deploy time):
+      %{security_credential: "base64-encoded-credential", ...}
+
+      # Auto-encrypt (convenient for sandbox/dev):
+      %{security_credential: {"my-initiator-password", File.read!("sandbox.cer")}, ...}
+
+  The tuple form is sugar over calling `Daraja.B2C.SecurityCredential.encrypt/2`
+  inside `PaymentRequest.new/1`. In production, prefer pre-encrypting with
+  `Daraja.B2C.SecurityCredential.encrypt/2` and storing only the resulting Base64
+  string — so plaintext passwords never live in application state at runtime.
+
   ## Application env fallbacks
 
   `initiator`, `security_credential`, `queue_timeout_url`, and `result_url`
-  fall back to the `:daraja` application env when not supplied in params:
+  fall back to the `:daraja` application env when not supplied in params.
+  `security_credential` can be a pre-encrypted string or a `{password, pem}` tuple
+  in config; per-call params always take precedence:
 
       config :daraja,
         b2b_initiator: "testapi",
@@ -29,12 +48,17 @@ defmodule Daraja.B2B.PaymentRequest do
         b2b_queue_timeout_url: "https://example.com/b2b/timeout",
         b2b_result_url: "https://example.com/b2b/result"
 
+      # Or in runtime.exs to read the cert file at boot:
+      config :daraja,
+        b2b_security_credential: {"my-initiator-password", File.read!("priv/sandbox.cer")}
+
   Per-call params always take precedence over env values, which is handy for
   multi-tenant callers that need to override defaults per request.
   """
 
   @type command_id :: String.t()
   @type identifier_type :: 2 | 4
+  @type security_credential_input :: String.t() | {String.t(), String.t()}
 
   @type t :: %__MODULE__{
           initiator: String.t(),
@@ -108,6 +132,8 @@ defmodule Daraja.B2B.PaymentRequest do
                | {:command_id, String.t()}
                | {:sender_identifier_type, String.t()}
                | {:receiver_identifier_type, String.t()}
+               | {:security_credential,
+                  Daraja.B2C.SecurityCredential.encrypt_error() | :invalid_format}
              ]}
   def new(params) when is_map(params) do
     params =
@@ -115,41 +141,52 @@ defmodule Daraja.B2B.PaymentRequest do
       |> normalize_keys()
       |> apply_env_fallbacks()
 
-    missing = Enum.filter(@required, fn key -> is_nil(params[key]) end)
+    # resolve_security_credential/1 returns {:error, :invalid_request, ...} on failure;
+    # with has no else, so that 3-tuple is returned directly to the caller.
+    with {:ok, params} <- resolve_security_credential(params) do
+      missing = Enum.filter(@required, fn key -> is_nil(params[key]) end)
 
-    cond do
-      missing != [] ->
-        {:error, :invalid_request, missing}
+      cond do
+        missing != [] ->
+          {:error, :invalid_request, missing}
 
-      params[:command_id] not in @valid_command_ids ->
-        {:error, :invalid_request,
-         [
-           {:command_id,
-            "must be one of: BusinessPayBill, BusinessBuyGoods, DisburseFundsToBusiness, BusinessToBusinessTransfer, BusinessTransferFromMMFToUtility, BusinessTransferFromUtilityToMMF, MerchantToMerchantTransfer, MerchantTransferFromMerchantToWorking, MerchantServicesMMFAccountTransfer or AgencyFloatAdvance"}
-         ]}
+        params[:command_id] not in @valid_command_ids ->
+          {:error, :invalid_request,
+           [
+             {:command_id,
+              "must be one of: BusinessPayBill, BusinessBuyGoods, DisburseFundsToBusiness, BusinessToBusinessTransfer, BusinessTransferFromMMFToUtility, BusinessTransferFromUtilityToMMF, MerchantToMerchantTransfer, MerchantTransferFromMerchantToWorking, MerchantServicesMMFAccountTransfer or AgencyFloatAdvance"}
+           ]}
 
-      params[:sender_identifier_type] not in @valid_identifier_types ->
-        {:error, :invalid_request, [{:sender_identifier_type, "must be 2 or 4"}]}
+        params[:sender_identifier_type] not in @valid_identifier_types ->
+          {:error, :invalid_request, [{:sender_identifier_type, "must be 2 or 4"}]}
 
-      params[:receiver_identifier_type] not in @valid_identifier_types ->
-        {:error, :invalid_request, [{:receiver_identifier_type, "must be 2 or 4"}]}
+        params[:receiver_identifier_type] not in @valid_identifier_types ->
+          {:error, :invalid_request, [{:receiver_identifier_type, "must be 2 or 4"}]}
 
-      true ->
-        {:ok,
-         %__MODULE__{
-           initiator: params[:initiator],
-           security_credential: params[:security_credential],
-           command_id: params[:command_id],
-           sender_identifier_type: params[:sender_identifier_type],
-           receiver_identifier_type: params[:receiver_identifier_type],
-           amount: params[:amount],
-           party_a: params[:party_a],
-           party_b: params[:party_b],
-           remarks: params[:remarks],
-           account_reference: params[:account_reference],
-           queue_timeout_url: params[:queue_timeout_url],
-           result_url: params[:result_url]
-         }}
+        true ->
+          {:ok,
+           %__MODULE__{
+             initiator: params[:initiator],
+             security_credential: params[:security_credential],
+             command_id: params[:command_id],
+             sender_identifier_type: params[:sender_identifier_type],
+             receiver_identifier_type: params[:receiver_identifier_type],
+             amount: params[:amount],
+             party_a: params[:party_a],
+             party_b: params[:party_b],
+             remarks: params[:remarks],
+             account_reference: params[:account_reference],
+             queue_timeout_url: params[:queue_timeout_url],
+             result_url: params[:result_url]
+           }}
+      end
+    end
+  end
+
+  defp resolve_security_credential(params) do
+    case Daraja.B2C.SecurityCredential.resolve(params[:security_credential]) do
+      {:ok, credential} -> {:ok, %{params | security_credential: credential}}
+      {:error, reason} -> {:error, :invalid_request, [{:security_credential, reason}]}
     end
   end
 

@@ -42,20 +42,14 @@ defmodule Daraja do
 
   ## Business to Customer (B2C)
 
-  Encrypt your initiator password to build a `SecurityCredential`:
-
-      {:ok, security_credential} =
-        Daraja.B2C.SecurityCredential.encrypt(
-          "your-initiator-password",
-          File.read!("sandbox-cert.cer")
-        )
-
-  Initiate a B2C payout request:
+  Pass the initiator password and certificate as a tuple — `PaymentRequest.new/1`
+  encrypts it internally (the tuple form is sugar over calling
+  `Daraja.B2C.SecurityCredential.encrypt/2` yourself):
 
       Daraja.B2C.payment(client, %{
         originator_conversation_id: "my-unique-id-001",
         initiator_name: "testapi",
-        security_credential: security_credential,
+        security_credential: {"your-initiator-password", File.read!("sandbox-cert.cer")},
         command_id: "BusinessPayment",
         amount: 10,
         party_a: "600997",
@@ -66,21 +60,26 @@ defmodule Daraja do
         occasion: "Promo"
       })
 
-  ## Business to Business (B2B)
-
-  Build a security credential (same utility used by B2C):
+  For production, pre-encrypt with `Daraja.B2C.SecurityCredential.encrypt/2` at
+  deploy time and store only the resulting Base64 string so plaintext passwords
+  never live in application state:
 
       {:ok, security_credential} =
         Daraja.B2C.SecurityCredential.encrypt(
           "your-initiator-password",
-          File.read!("sandbox-cert.cer")
+          File.read!("cert.cer")
         )
 
-  Initiate a B2B transfer request:
+      Daraja.B2C.payment(client, %{security_credential: security_credential, ...})
+
+  ## Business to Business (B2B)
+
+  Same credential options as B2C — tuple for convenience, pre-encrypted string for
+  production:
 
       Daraja.B2B.request(client, %{
         initiator: "testapi",
-        security_credential: security_credential,
+        security_credential: {"your-initiator-password", File.read!("sandbox-cert.cer")},
         command_id: "BusinessPayBill",
         sender_identifier_type: 4,
         receiver_identifier_type: 4,

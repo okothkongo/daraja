@@ -5,6 +5,8 @@ defmodule Daraja.B2BTest do
   alias Daraja.Client
   alias Daraja.HTTPClient.Mock
 
+  @cert_pem File.read!("test/support/fixtures/security_credential_cert.pem")
+
   @auth_success ~s({"access_token":"tok123","expires_in":"3600"})
 
   @payment_success ~s({
@@ -148,12 +150,55 @@ defmodule Daraja.B2BTest do
       assert {:ok, %Response.Success{}} = Daraja.B2B.request(client, request)
     end
 
+    test "auto-encrypts security_credential tuple before sending", %{client: client} do
+      Mock.push_response({:ok, 200, [], @auth_success})
+      Mock.push_response({:ok, 200, [], @payment_success})
+
+      params = %{@valid_params | security_credential: {"my-initiator-password", @cert_pem}}
+      assert {:ok, %Response.Success{}} = Daraja.B2B.request(client, params)
+    end
+
     test "omits AccountReference when it is not provided", %{client: client} do
       Mock.push_response({:ok, 200, [], @auth_success})
       Mock.push_response({:ok, 200, [], @payment_success})
 
       params = Map.delete(@valid_params, :account_reference)
       assert {:ok, %Response.Success{}} = Daraja.B2B.request(client, params)
+    end
+  end
+
+  describe "PaymentRequest.new/1 security_credential resolution" do
+    setup do
+      Application.delete_env(:daraja, :b2b_security_credential)
+      on_exit(fn -> Application.delete_env(:daraja, :b2b_security_credential) end)
+      :ok
+    end
+
+    test "auto-encrypts a {password, pem} tuple" do
+      params = %{@valid_params | security_credential: {"my-initiator-password", @cert_pem}}
+      assert {:ok, request} = PaymentRequest.new(params)
+      assert is_binary(request.security_credential)
+      assert request.security_credential != "my-initiator-password"
+    end
+
+    test "returns invalid_request when pem in tuple is invalid" do
+      params = %{@valid_params | security_credential: {"password", "bad-pem"}}
+
+      assert {:error, :invalid_request, [{:security_credential, :invalid_public_key}]} =
+               PaymentRequest.new(params)
+    end
+
+    test "returns invalid_request for a malformed security_credential" do
+      params = %{@valid_params | security_credential: 12_345}
+
+      assert {:error, :invalid_request, [{:security_credential, :invalid_format}]} =
+               PaymentRequest.new(params)
+    end
+
+    test "returns invalid_request with :security_credential in missing when omitted and no env" do
+      params = Map.delete(@valid_params, :security_credential)
+      assert {:error, :invalid_request, missing} = PaymentRequest.new(params)
+      assert :security_credential in missing
     end
   end
 
@@ -246,6 +291,16 @@ defmodule Daraja.B2BTest do
 
       assert {:error, :invalid_request, missing} = Daraja.B2B.request(client, params)
       assert Enum.all?(Map.keys(@env_fields_to_keys), &(&1 in missing))
+    end
+
+    test "auto-encrypts a {password, pem} tuple configured in the env", %{client: client} do
+      Application.put_env(:daraja, :b2b_security_credential, {"env-password", @cert_pem})
+
+      Mock.push_response({:ok, 200, [], @auth_success})
+      Mock.push_response({:ok, 200, [], @payment_success})
+
+      params = Map.delete(@valid_params, :security_credential)
+      assert {:ok, %Response.Success{}} = Daraja.B2B.request(client, params)
     end
   end
 
