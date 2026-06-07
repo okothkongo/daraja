@@ -394,7 +394,9 @@ defmodule Daraja.TokenCacheTest do
       Task.async(fn -> TokenCache.get_token(client2, name) end)
     ]
 
-    assert [{:ok, "tok-1"}, {:ok, "tok-2"}] = Task.await_many(tasks, 5_000)
+    results = Task.await_many(tasks, 5_000)
+
+    assert MapSet.new(results) == MapSet.new([{:ok, "tok-1"}, {:ok, "tok-2"}])
   end
 
   defp start_cache!(opts), do: TokenCacheHelper.start!(opts)

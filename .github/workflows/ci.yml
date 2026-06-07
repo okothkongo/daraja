@@ -92,4 +92,4 @@ jobs:
             _build
           key: 29-1.20.x-dialyzer
       - run: mix deps.get --only test
-      - run: mix dialyzer --halt-exit-status
+      - run: mix dialyzer --quiet-with-result
