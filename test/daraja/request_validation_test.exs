@@ -57,12 +57,39 @@ defmodule Daraja.RequestValidationTest do
     assert msg =~ "must be a string"
   end
 
-  test "validate_msisdn/2 respects :msisdn_regex config" do
-    Application.put_env(:daraja, :msisdn_regex, ~r/^\+254\d{9}$/)
+  defp restore_msisdn_regex!(nil), do: Application.delete_env(:daraja, :msisdn_regex)
+  defp restore_msisdn_regex!(regex), do: Application.put_env(:daraja, :msisdn_regex, regex)
 
-    on_exit(fn -> Application.delete_env(:daraja, :msisdn_regex) end)
+  test "validate_msisdn_with_regex/4 respects custom regex without normalizing" do
+    regex = ~r/^\+254\d{9}$/
 
-    assert :ok = RequestValidation.validate_msisdn("+254712345678")
-    assert {:error, {:phone_number, _}} = RequestValidation.validate_msisdn("254712345678")
+    assert :ok =
+             RequestValidation.validate_msisdn_with_regex(
+               "+254712345678",
+               :phone_number,
+               regex,
+               false
+             )
+
+    assert {:error, {:phone_number, _}} =
+             RequestValidation.validate_msisdn_with_regex(
+               "254712345678",
+               :phone_number,
+               regex,
+               false
+             )
+  end
+
+  test "validate_msisdn/2 uses configured :msisdn_regex without normalizing" do
+    previous = Application.get_env(:daraja, :msisdn_regex)
+
+    try do
+      Application.put_env(:daraja, :msisdn_regex, ~r/^\+254\d{9}$/)
+
+      assert :ok = RequestValidation.validate_msisdn("+254712345678")
+      assert {:error, {:phone_number, _}} = RequestValidation.validate_msisdn("254712345678")
+    after
+      restore_msisdn_regex!(previous)
+    end
   end
 end

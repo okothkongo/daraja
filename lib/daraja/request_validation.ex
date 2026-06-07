@@ -27,8 +27,29 @@ defmodule Daraja.RequestValidation do
 
   @spec validate_msisdn(term(), atom()) :: :ok | {:error, {atom(), String.t()}}
   def validate_msisdn(msisdn, field \\ :phone_number) do
-    regex = Application.get_env(:daraja, :msisdn_regex, @default_msisdn_regex)
-    msisdn = if regex == @default_msisdn_regex, do: normalize_msisdn(msisdn), else: msisdn
+    {regex, normalize?} = msisdn_validation_opts()
+
+    case validate_msisdn_with_regex(msisdn, field, regex, normalize?) do
+      :ok -> :ok
+      {:error, _} = error -> error
+    end
+  end
+
+  @spec coerce_msisdn(term(), atom()) :: {:ok, String.t()} | {:error, {atom(), String.t()}}
+  def coerce_msisdn(msisdn, field \\ :phone_number) do
+    {regex, normalize?} = msisdn_validation_opts()
+
+    case validate_msisdn_with_regex(msisdn, field, regex, normalize?) do
+      :ok -> {:ok, normalize_msisdn_if(msisdn, normalize?)}
+      {:error, _} = error -> error
+    end
+  end
+
+  @doc false
+  @spec validate_msisdn_with_regex(term(), atom(), Regex.t(), boolean()) ::
+          :ok | {:error, {atom(), String.t()}}
+  def validate_msisdn_with_regex(msisdn, field, regex, normalize?) do
+    msisdn = normalize_msisdn_if(msisdn, normalize?)
 
     if is_binary(msisdn) and Regex.match?(regex, msisdn) do
       :ok
@@ -39,19 +60,15 @@ defmodule Daraja.RequestValidation do
     end
   end
 
-  @spec coerce_msisdn(term(), atom()) :: {:ok, String.t()} | {:error, {atom(), String.t()}}
-  def coerce_msisdn(msisdn, field \\ :phone_number) do
-    regex = Application.get_env(:daraja, :msisdn_regex, @default_msisdn_regex)
-    msisdn = if regex == @default_msisdn_regex, do: normalize_msisdn(msisdn), else: msisdn
-
-    if is_binary(msisdn) and Regex.match?(regex, msisdn) do
-      {:ok, msisdn}
-    else
-      {:error,
-       {field,
-        "must be a Kenyan MSISDN in 254XXXXXXXXX format (override with :msisdn_regex config)"}}
+  defp msisdn_validation_opts do
+    case Application.get_env(:daraja, :msisdn_regex) do
+      nil -> {@default_msisdn_regex, true}
+      regex -> {regex, false}
     end
   end
+
+  defp normalize_msisdn_if(msisdn, true), do: normalize_msisdn(msisdn)
+  defp normalize_msisdn_if(msisdn, false), do: msisdn
 
   @spec validate_transaction_desc(term()) :: :ok | {:error, {:transaction_desc, String.t()}}
   def validate_transaction_desc(nil), do: :ok
