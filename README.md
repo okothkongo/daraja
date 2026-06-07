@@ -19,6 +19,7 @@ endpoints.
 - OAuth token caching via `Daraja.Supervisor` and `Daraja.TokenCache`
 - Built-in security credential encryption (`Daraja.SecurityCredential`)
 - Callback parsers for STK Push, C2B, B2B, and B2C webhooks
+- Optional callback verification (`Daraja.Callback.Security`) and idempotency (`Daraja.Callback.Guard`)
 - Pluggable HTTP client (`Daraja.HTTPClient`; Finch default)
 
 ## Usage
@@ -142,28 +143,77 @@ iex> Daraja.B2B.request(client, %{
 
 ### Callbacks
 
-Parse inbound webhook payloads posted by M-PESA to your registered URLs:
+Safaricom Daraja callbacks are **unsigned** JSON POSTs. Verify each request
+before treating parsed output as proof of payment. Register HTTPS callback URLs
+with a secret query parameter (for example `?token=...`), allowlist Safaricom
+IP ranges, deduplicate on transaction IDs, and reconcile against your outbound
+API calls when possible.
+
+`Daraja.Callback.Security` ships community-documented Safaricom callback CIDRs
+and explicit host defaults. They are **not** fetched from the live Daraja API—
+verify against Safaricom support or your production logs, then override:
 
 ```elixir
-# STK Push callback
-payload = Jason.decode!(conn.body_params)
-callback = Daraja.Express.Callback.from_map(payload)
-json(conn, Daraja.Express.Callback.accept())
-
-# C2B validation callback
-callback = Daraja.C2B.Callback.from_map(payload)
-
-response =
-  if valid_account?(callback.bill_ref_number) do
-    Daraja.C2B.Callback.accept()
-  else
-    Daraja.C2B.Callback.reject("C2B00012")
-  end
-
-json(conn, response)
+config :daraja,
+  callback_cidrs: ["196.201.212.0/24", "196.201.213.0/24", "196.201.214.0/24"],
+  callback_hosts: ["196.201.214.200", "196.201.212.127"]
 ```
 
-See `Daraja.Express.Callback`, `Daraja.C2B.Callback`, `Daraja.B2B.Callback`,
+Disable `check_ip: true` in sandbox/dev (ngrok and local tunnels will not match
+production Safaricom ranges).
+
+Start an optional idempotency guard:
+
+```elixir
+children = [
+  {Daraja.Callback.Guard, []}
+]
+```
+
+Parse and verify inbound webhook payloads:
+
+```elixir
+callback_secret = Application.fetch_env!(:my_app, :mpesa_callback_secret)
+payload = conn.body_params
+
+with :ok <-
+       Daraja.Callback.Security.verify(
+         ip: conn.remote_ip,
+         check_ip: true,
+         shared_secret: callback_secret,
+         provided_secret: conn.params["token"]
+       ),
+     {:ok, callback} <- Daraja.Express.Callback.parse(payload),
+     :ok <- Daraja.Callback.Guard.ensure_fresh(callback.checkout_request_id) do
+  # fulfil order, persist receipt, etc.
+  json(conn, Daraja.Express.Callback.accept())
+else
+  {:error, :untrusted_ip} -> send_resp(conn, 403, "Forbidden")
+  {:error, :invalid_secret} -> send_resp(conn, 403, "Forbidden")
+  {:error, :invalid_callback, _} -> send_resp(conn, 400, "Bad Request")
+  {:error, :duplicate} -> json(conn, Daraja.Express.Callback.accept())
+end
+```
+
+C2B validation example:
+
+```elixir
+with :ok <- Daraja.Callback.Security.verify(ip: conn.remote_ip, check_ip: true, ...),
+     {:ok, callback} <- Daraja.C2B.Callback.parse_validation(payload),
+     :ok <- Daraja.Callback.Guard.ensure_fresh(callback.trans_id) do
+  response =
+    if valid_account?(callback.bill_ref_number) do
+      Daraja.C2B.Callback.accept()
+    else
+      Daraja.C2B.Callback.reject("C2B00012")
+    end
+
+  json(conn, response)
+end
+```
+
+See `Daraja.Callback.Security`, `Daraja.Callback.Guard`,
+`Daraja.Express.Callback`, `Daraja.C2B.Callback`, `Daraja.B2B.Callback`,
 and `Daraja.B2C.Callback` for full details.
 
 ## Installation
@@ -182,8 +232,13 @@ end
 When published to Hex, `{:daraja, "~> 0.1.0"}` will replace the git dependency.
 
 `:finch` is optional in Daraja's own `mix.exs` but required for the default
-HTTP adapter. Start a Finch pool and optionally enable token caching in your
-application's supervision tree:
+HTTP adapter. CI tests the Finch adapter against **0.18.0** (minimum) and the
+latest release matching `~> 0.18` so Mint/TLS stack changes are caught early.
+Use `{:finch, "~> 0.18"}` in your app unless you provide a custom
+`Daraja.HTTPClient`.
+
+Start a Finch pool and optionally enable token caching in your application's
+supervision tree:
 
 ```elixir
 children = [
@@ -276,6 +331,29 @@ config :daraja, :http_client, MyApp.CustomHTTPClient
 from your `mix.exs` and drop the Finch pool from your supervision tree. Finch is an
 optional dependency; leaving the default `Daraja.HTTPClient.Finch` configured while
 omitting Finch from deps will raise at runtime with a clear message.
+
+The default Finch adapter validates Safaricom HTTPS endpoints using your OS trust
+store. It does not pin certificates. For pinning or a private CA, supply a custom
+`Daraja.HTTPClient` with the TLS options your deployment requires.
+
+### Error handling
+
+`:auth_failed` and gateway `:http_error` outcomes return a `%Daraja.APIError{}`
+struct (parsed `error_code` / `error_message` when Safaricom sends JSON; otherwise
+a short summary without the raw body). Business-level API rejections on HTTP 200/400
+still return product-specific `%Response.Error{}` structs. Avoid logging full error
+terms at `:info` or above in production — log `error_code` and `error_message` fields
+instead.
+
+### Request validation
+
+Payment request structs validate `amount` as a positive integer, Kenyan MSISDNs as
+`254XXXXXXXXX`, and (for STK Push) `account_reference` length and `transaction_type`.
+Override the MSISDN pattern when needed:
+
+```elixir
+config :daraja, :msisdn_regex, ~r/^254\d{9}$/
+```
 
 ## Documentation
 

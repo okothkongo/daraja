@@ -3,6 +3,8 @@ defmodule Daraja.B2C.Response do
   Response structs for the B2C Payment Request API.
   """
 
+  alias Daraja.ResponseCode
+
   defmodule Success do
     @moduledoc "Returned when Safaricom accepts a B2C payment request."
 
@@ -33,14 +35,25 @@ defmodule Daraja.B2C.Response do
     defstruct [:request_id, :error_code, :error_message]
   end
 
+  @doc """
+  Parses a raw response map into a `Success` or `Error` struct.
+
+  Note: Safaricom may return the misspelled key `OriginatorCoversationID`
+  (missing the second 'n'). Both spellings are handled for resilience.
+  """
   @spec from_map(map()) :: Success.t() | Error.t()
   def from_map(%{"ConversationID" => _} = map) do
-    %Success{
-      conversation_id: map["ConversationID"],
-      originator_conversation_id: map["OriginatorConversationID"],
-      response_code: map["ResponseCode"],
-      response_description: map["ResponseDescription"]
-    }
+    if ResponseCode.success?(map) do
+      %Success{
+        conversation_id: map["ConversationID"],
+        originator_conversation_id:
+          map["OriginatorCoversationID"] || map["OriginatorConversationID"],
+        response_code: map["ResponseCode"],
+        response_description: map["ResponseDescription"]
+      }
+    else
+      response_code_error(map)
+    end
   end
 
   def from_map(map) do
@@ -48,6 +61,16 @@ defmodule Daraja.B2C.Response do
       request_id: map["requestId"],
       error_code: map["errorCode"],
       error_message: map["errorMessage"]
+    }
+  end
+
+  defp response_code_error(map) do
+    fields = ResponseCode.error_fields(map)
+
+    %Error{
+      request_id: map["requestId"],
+      error_code: fields.error_code,
+      error_message: fields.error_message
     }
   end
 end

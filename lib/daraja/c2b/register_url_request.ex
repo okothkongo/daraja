@@ -23,7 +23,9 @@ defmodule Daraja.C2B.RegisterUrlRequest do
   @valid_response_types ~w[Completed Cancelled]
 
   @spec new(map()) ::
-          {:ok, t()} | {:error, :invalid_request, [atom() | {:response_type, String.t()}]}
+          {:ok, t()}
+          | {:error, :invalid_request,
+             [atom() | {:response_type, String.t()} | {atom(), String.t()}]}
   def new(params) when is_map(params) do
     params = normalize_keys(params)
     missing = Enum.filter(@required, fn key -> is_nil(params[key]) end)
@@ -36,13 +38,19 @@ defmodule Daraja.C2B.RegisterUrlRequest do
         {:error, :invalid_request, [{:response_type, "must be \"Completed\" or \"Cancelled\""}]}
 
       true ->
-        {:ok,
-         %__MODULE__{
-           short_code: params[:short_code],
-           response_type: params[:response_type],
-           confirmation_url: params[:confirmation_url],
-           validation_url: params[:validation_url]
-         }}
+        case Daraja.CallbackURL.validate_all(params, [:confirmation_url, :validation_url]) do
+          :ok ->
+            {:ok,
+             %__MODULE__{
+               short_code: params[:short_code],
+               response_type: params[:response_type],
+               confirmation_url: params[:confirmation_url],
+               validation_url: params[:validation_url]
+             }}
+
+          {:error, errors} ->
+            {:error, :invalid_request, errors}
+        end
     end
   end
 

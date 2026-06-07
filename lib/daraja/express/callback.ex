@@ -6,14 +6,23 @@ defmodule Daraja.Express.Callback do
   STK Push callbacks are one-way notifications: M-PESA only needs the merchant
   to acknowledge receipt with `ResultCode: 0`.
 
+  Daraja does **not** sign callbacks.   Verify the request with
+  `Daraja.Callback.Security` and deduplicate with `Daraja.Callback.Guard` before
+  treating parsed output as proof of payment. Use `parse/1` on untrusted input.
+
   ## Example
 
-      payload = Jason.decode!(conn.body_params)
-      callback = Daraja.Express.Callback.from_map(payload)
-
-      # ...persist the result...
-
-      json(conn, Daraja.Express.Callback.accept())
+      with :ok <-
+             Daraja.Callback.Security.verify(
+               ip: conn.remote_ip,
+               check_ip: true,
+               shared_secret: callback_secret,
+               provided_secret: conn.params["token"]
+             ),
+           {:ok, callback} <- Daraja.Express.Callback.parse(payload),
+           :ok <- Daraja.Callback.Guard.ensure_fresh(callback.checkout_request_id) do
+        json(conn, Daraja.Express.Callback.accept())
+      end
   """
 
   defmodule Result do
@@ -46,6 +55,9 @@ defmodule Daraja.Express.Callback do
   Successful payloads include a `CallbackMetadata` block with the transaction
   details (Amount, MpesaReceiptNumber, TransactionDate, PhoneNumber). Failed
   payloads omit it.
+
+  Prefer `parse/1` for inbound HTTP requests. `from_map/1` accepts only payloads
+  with a `Body.stkCallback` envelope.
   """
   @spec from_map(map()) :: Result.t()
   def from_map(%{"Body" => %{"stkCallback" => stk}}) when is_map(stk) do
@@ -61,7 +73,21 @@ defmodule Daraja.Express.Callback do
     }
   end
 
-  def from_map(_), do: %Result{}
+  @doc """
+  Parses an STK Push callback map from an untrusted HTTP request.
+
+  Returns `{:error, :invalid_callback, reason}` when the top-level shape does
+  not match a Daraja STK callback.
+  """
+  @spec parse(map()) :: {:ok, Result.t()} | {:error, :invalid_callback, String.t()}
+  def parse(%{"Body" => %{"stkCallback" => stk}} = map) when is_map(stk) do
+    case Daraja.Callback.Validate.present_string(stk["CheckoutRequestID"]) do
+      :ok -> {:ok, from_map(map)}
+      {:error, _} -> {:error, :invalid_callback, "missing CheckoutRequestID"}
+    end
+  end
+
+  def parse(_), do: {:error, :invalid_callback, "missing Body.stkCallback"}
 
   @doc """
   Builds the JSON response body used to acknowledge an STK Push callback.
@@ -89,12 +115,6 @@ defmodule Daraja.Express.Callback do
   defp extract_metadata_items(stk) do
     stk
     |> get_in(["CallbackMetadata", "Item"])
-    |> normalize_item_list()
-    |> Enum.map(fn %{"Name" => name, "Value" => value} -> %{name: name, value: value} end)
+    |> Daraja.Callback.Items.extract_name_value()
   end
-
-  defp normalize_item_list(nil), do: []
-  defp normalize_item_list(list) when is_list(list), do: list
-  defp normalize_item_list(map) when is_map(map), do: [map]
-  defp normalize_item_list(_), do: []
 end

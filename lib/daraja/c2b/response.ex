@@ -3,6 +3,8 @@ defmodule Daraja.C2B.Response do
   Response structs for the C2B Register URL and Simulate APIs.
   """
 
+  alias Daraja.ResponseCode
+
   defmodule Success do
     @moduledoc "Returned when Safaricom successfully accepts a C2B request."
 
@@ -39,12 +41,16 @@ defmodule Daraja.C2B.Response do
   """
   @spec from_map(map()) :: Success.t() | Error.t()
   def from_map(%{"ResponseCode" => _} = map) do
-    %Success{
-      originator_conversation_id:
-        map["OriginatorCoversationID"] || map["OriginatorConversationID"],
-      response_code: map["ResponseCode"],
-      response_description: map["ResponseDescription"]
-    }
+    if ResponseCode.success?(map) do
+      %Success{
+        originator_conversation_id:
+          map["OriginatorCoversationID"] || map["OriginatorConversationID"],
+        response_code: map["ResponseCode"],
+        response_description: map["ResponseDescription"]
+      }
+    else
+      response_code_error(map)
+    end
   end
 
   def from_map(map) do
@@ -52,6 +58,16 @@ defmodule Daraja.C2B.Response do
       request_id: map["requestId"],
       error_code: map["errorCode"],
       error_message: map["errorMessage"]
+    }
+  end
+
+  defp response_code_error(map) do
+    fields = ResponseCode.error_fields(map)
+
+    %Error{
+      request_id: map["requestId"],
+      error_code: fields.error_code,
+      error_message: fields.error_message
     }
   end
 end

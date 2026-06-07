@@ -87,3 +87,25 @@ defmodule Daraja.Client do
   def base_url(%__MODULE__{environment: :production}), do: @production_url
   def base_url(%__MODULE__{}), do: @sandbox_url
 end
+
+defimpl Inspect, for: Daraja.Client do
+  import Inspect.Algebra
+
+  @redacted "[REDACTED]"
+
+  def inspect(client, opts) do
+    fields = [
+      consumer_key: client.consumer_key,
+      consumer_secret: @redacted,
+      business_short_code: client.business_short_code,
+      passkey: redact(client.passkey),
+      callback_url: client.callback_url,
+      environment: client.environment
+    ]
+
+    concat(["#Daraja.Client<", to_doc(fields, opts), ">"])
+  end
+
+  defp redact(nil), do: nil
+  defp redact(_), do: @redacted
+end

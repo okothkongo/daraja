@@ -35,7 +35,19 @@ defmodule Daraja.Supervisor do
 
   def init(opts) do
     cache_name = Keyword.get(opts, :cache_name, Daraja.TokenCache)
-    children = [{Daraja.TokenCache, Keyword.put(opts, :name, cache_name)}]
+    task_supervisor = Keyword.get(opts, :task_supervisor, Daraja.TokenCache.TaskSupervisor)
+    Daraja.Runtime.register_token_cache(cache_name)
+
+    cache_opts =
+      opts
+      |> Keyword.put(:name, cache_name)
+      |> Keyword.put_new(:task_supervisor, task_supervisor)
+
+    children = [
+      {Task.Supervisor, name: task_supervisor},
+      {Daraja.TokenCache, cache_opts}
+    ]
+
     Supervisor.init(children, strategy: :one_for_one)
   end
 end

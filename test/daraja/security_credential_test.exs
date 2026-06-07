@@ -1,10 +1,28 @@
 defmodule Daraja.SecurityCredentialTest do
   use ExUnit.Case, async: true
 
+  import ExUnit.CaptureLog
+
+  alias Daraja.Runtime
   alias Daraja.SecurityCredential
 
   @cert_pem File.read!("test/support/fixtures/security_credential_cert.pem")
   @key_pem File.read!("test/support/fixtures/security_credential_key.pem")
+  @fixture_pin "yGsAE85gJh3satQK/3DRqZCjovsVGOqmUQ22wXvoIko"
+
+  setup do
+    Runtime.reset!()
+
+    on_exit(fn ->
+      Application.delete_env(:daraja, :security_credential_pins)
+      Application.delete_env(:daraja, :enforce_security_credential_pins)
+      Application.delete_env(:daraja, :environment)
+      Application.delete_env(:daraja, :warn_tuple_security_credential)
+      Runtime.reset!()
+    end)
+
+    :ok
+  end
 
   defp rsa_keypair(bits \\ 2048) do
     private_key = :public_key.generate_key({:rsa, bits, 65_537})
@@ -112,6 +130,10 @@ defmodule Daraja.SecurityCredentialTest do
       assert {:ok, "already-encrypted"} = SecurityCredential.resolve("already-encrypted")
     end
 
+    test "rejects an empty binary credential" do
+      assert {:error, :invalid_format} = SecurityCredential.resolve("")
+    end
+
     test "passes nil through as {:ok, nil}" do
       assert {:ok, nil} = SecurityCredential.resolve(nil)
     end
@@ -125,6 +147,25 @@ defmodule Daraja.SecurityCredentialTest do
       assert {:ok, credential} = SecurityCredential.resolve({"password", public_pem})
       assert is_binary(credential)
       assert credential != "password"
+    end
+
+    test "caches encrypted tuple credentials" do
+      {_private_key, public_key} = rsa_keypair()
+
+      public_pem =
+        :public_key.pem_encode([:public_key.pem_entry_encode(:RSAPublicKey, public_key)])
+
+      assert {:ok, first} = SecurityCredential.resolve({"password", public_pem})
+      assert {:ok, second} = SecurityCredential.resolve({"password", public_pem})
+      assert first == second
+    end
+
+    test "rejects tuple credentials in production when disabled" do
+      Application.put_env(:daraja, :environment, :production)
+      Application.put_env(:daraja, :allow_tuple_security_credential, false)
+
+      assert {:error, :tuple_credentials_disabled} =
+               SecurityCredential.resolve({"password", @cert_pem})
     end
 
     test "returns :invalid_public_key when pem in tuple is invalid" do
@@ -143,6 +184,101 @@ defmodule Daraja.SecurityCredentialTest do
     test "returns :invalid_format for a 3-tuple" do
       assert {:error, :invalid_format} = SecurityCredential.resolve({"a", "b", "c"})
     end
+  end
+
+  test "spki_fingerprint/1 returns Base64 SHA-256 of the SPKI" do
+    assert {:ok, @fixture_pin} = SecurityCredential.spki_fingerprint(@cert_pem)
+  end
+
+  describe "certificate pinning" do
+    test "accepts PEM when fingerprint is pinned" do
+      Application.put_env(:daraja, :security_credential_pins, [@fixture_pin])
+
+      assert {:ok, _} = SecurityCredential.encrypt("password", @cert_pem)
+    end
+
+    test "rejects PEM when fingerprint is not pinned" do
+      Application.put_env(:daraja, :security_credential_pins, ["known-but-different-pin"])
+
+      assert {:error, :untrusted_public_key} =
+               SecurityCredential.encrypt("password", @cert_pem)
+    end
+
+    test "skips pinning when no pins are configured" do
+      {_private_key, public_key} = rsa_keypair()
+
+      public_pem =
+        :public_key.pem_encode([:public_key.pem_entry_encode(:RSAPublicKey, public_key)])
+
+      assert {:ok, _} = SecurityCredential.encrypt("password", public_pem)
+    end
+
+    test "skips pinning in sandbox when enforce_security_credential_pins is false" do
+      Application.put_env(:daraja, :environment, :sandbox)
+      Application.put_env(:daraja, :enforce_security_credential_pins, false)
+      Application.put_env(:daraja, :security_credential_pins, ["known-but-different-pin"])
+
+      assert {:ok, _} = SecurityCredential.encrypt("password", @cert_pem)
+    end
+
+    test "enforces pinning in production even when enforce flag is false" do
+      Application.put_env(:daraja, :environment, :production)
+      Application.put_env(:daraja, :enforce_security_credential_pins, false)
+      Application.put_env(:daraja, :security_credential_pins, ["known-but-different-pin"])
+
+      assert {:error, :untrusted_public_key} =
+               SecurityCredential.encrypt("password", @cert_pem)
+    end
+
+    test "supports environment-specific pin lists" do
+      Application.put_env(:daraja, :environment, :sandbox)
+      Application.put_env(:daraja, :security_credential_pins, sandbox: [@fixture_pin])
+
+      assert {:ok, _} = SecurityCredential.encrypt("password", @cert_pem)
+    end
+
+    test "ignores non-list security_credential_pins config" do
+      Application.put_env(:daraja, :security_credential_pins, "not-a-list")
+
+      {_private_key, public_key} = rsa_keypair()
+
+      public_pem =
+        :public_key.pem_encode([:public_key.pem_entry_encode(:RSAPublicKey, public_key)])
+
+      assert {:ok, _} = SecurityCredential.encrypt("password", public_pem)
+    end
+
+    test "returns invalid_public_key when pinning is enabled and fingerprint fails" do
+      Application.put_env(:daraja, :environment, :production)
+      Application.put_env(:daraja, :security_credential_pins, [@fixture_pin])
+
+      {_private_key, public_key} = rsa_keypair()
+
+      {:SubjectPublicKeyInfo, der, info} =
+        :public_key.pem_entry_encode(:SubjectPublicKeyInfo, public_key)
+
+      bad_pem = :public_key.pem_encode([{:SubjectPublicKeyInfo, binary_part(der, 0, 10), info}])
+
+      assert {:error, :invalid_public_key} = SecurityCredential.encrypt("password", bad_pem)
+    end
+  end
+
+  test "warns once when resolving tuple credentials" do
+    Application.put_env(:daraja, :warn_tuple_security_credential, true)
+
+    {_private_key, public_key} = rsa_keypair()
+
+    public_pem =
+      :public_key.pem_encode([:public_key.pem_entry_encode(:RSAPublicKey, public_key)])
+
+    log =
+      capture_log(fn ->
+        assert {:ok, _} = SecurityCredential.resolve({"password", public_pem})
+        assert {:ok, _} = SecurityCredential.resolve({"password", public_pem})
+      end)
+
+    assert log =~ "Encrypting security credentials from a {password, pem} tuple"
+    assert length(:binary.matches(log, "Encrypting security credentials")) == 1
   end
 
   test "returns encryption_failed when the password is too large for the key" do

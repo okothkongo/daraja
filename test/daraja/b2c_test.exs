@@ -2,8 +2,11 @@ defmodule Daraja.B2CTest do
   use ExUnit.Case, async: false
 
   alias Daraja.B2C.{PaymentRequest, Response}
-  alias Daraja.Client
+  alias Daraja.{APIError, Client}
   alias Daraja.HTTPClient.Mock
+  alias Daraja.Test.TokenCacheHelper
+
+  require TokenCacheHelper
 
   @cert_pem File.read!("test/support/fixtures/security_credential_cert.pem")
 
@@ -14,6 +17,13 @@ defmodule Daraja.B2CTest do
     "OriginatorConversationID": "600997_Test_32et3241ed8yu",
     "ResponseCode": "0",
     "ResponseDescription": "Accept the service request successfully."
+  })
+
+  @payment_rejected ~s({
+    "ConversationID": "AG_20240706_20106e9209f64bebd05b",
+    "OriginatorConversationID": "600997_Test_32et3241ed8yu",
+    "ResponseCode": "1",
+    "ResponseDescription": "Rejected by Safaricom."
   })
 
   @api_error ~s({
@@ -83,6 +93,17 @@ defmodule Daraja.B2CTest do
       assert err.error_code == "500.002.1001"
     end
 
+    test "returns request_failed when ResponseCode is non-zero", %{client: client} do
+      Mock.push_response({:ok, 200, [], @auth_success})
+      Mock.push_response({:ok, 200, [], @payment_rejected})
+
+      assert {:error, :request_failed, %Response.Error{} = err} =
+               Daraja.B2C.payment(client, @valid_params)
+
+      assert err.error_code == "1"
+      assert err.error_message == "Rejected by Safaricom."
+    end
+
     test "returns http_error on transport failure", %{client: client} do
       Mock.push_response({:ok, 200, [], @auth_success})
       Mock.push_response({:error, :timeout})
@@ -96,7 +117,7 @@ defmodule Daraja.B2CTest do
       Mock.push_response({:ok, 200, [], @auth_success})
       Mock.push_response({:ok, 200, [], "not json <<<"})
 
-      assert {:error, :request_failed, "not json <<<"} =
+      assert {:error, :request_failed, %APIError{error_message: "non-JSON error response"}} =
                Daraja.B2C.payment(client, @valid_params)
     end
 
@@ -158,16 +179,54 @@ defmodule Daraja.B2CTest do
       assert {:error, :invalid_request, missing} = PaymentRequest.new(params)
       assert :security_credential in missing
     end
+
+    test "returns invalid_request when env security_credential tuple cannot be encrypted" do
+      Application.put_env(:daraja, :b2c_security_credential, {"password", "bad-pem"})
+      params = Map.delete(@valid_params, :security_credential)
+
+      assert {:error, :invalid_request, [{:security_credential, :invalid_public_key}]} =
+               PaymentRequest.new(params)
+    end
   end
 
   describe "payment/2 auth failure" do
     test "returns auth_failed without making API call", %{client: client} do
       Mock.push_response({:ok, 401, [], "Unauthorized"})
-      assert {:error, :auth_failed, "Unauthorized"} = Daraja.B2C.payment(client, @valid_params)
+
+      assert {:error, :auth_failed, %APIError{status: 401}} =
+               Daraja.B2C.payment(client, @valid_params)
+    end
+
+    test "invalidates cache and retries after payment 401", %{client: client} do
+      name = :"b2c_cache_#{System.unique_integer([:positive])}"
+      TokenCacheHelper.start!(name: name)
+      Application.put_env(:daraja, :token_cache, name)
+      on_exit(fn -> Application.delete_env(:daraja, :token_cache) end)
+
+      Mock.push_response({:ok, 200, [], ~s({"access_token":"stale","expires_in":"3600"})})
+      Mock.push_response({:ok, 401, [], "Unauthorized"})
+      Mock.push_response({:ok, 200, [], ~s({"access_token":"fresh","expires_in":"3600"})})
+      Mock.push_response({:ok, 200, [], @payment_success})
+
+      assert {:ok, %Response.Success{}} = Daraja.B2C.payment(client, @valid_params)
+      assert {:error, :no_response_queued} = Mock.request(:get, "", [], "")
     end
   end
 
   describe "payment/2 with invalid params" do
+    test "returns invalid_request for unsafe callback URLs", %{client: client} do
+      params =
+        Map.put(@valid_params, :queue_timeout_url, "https://10.0.0.1/timeout")
+
+      assert {:error, :invalid_request, [{:queue_timeout_url, _}]} =
+               Daraja.B2C.payment(client, params)
+    end
+
+    test "returns invalid_request for non-positive amount", %{client: client} do
+      assert {:error, :invalid_request, [{:amount, _}]} =
+               Daraja.B2C.payment(client, %{@valid_params | amount: "100"})
+    end
+
     test "returns invalid_request when a required field is missing", %{client: client} do
       assert {:error, :invalid_request, missing} =
                Daraja.B2C.payment(client, Map.delete(@valid_params, :party_b))

@@ -3,7 +3,10 @@ defmodule Daraja.TokenCacheTest do
 
   alias Daraja.Client
   alias Daraja.HTTPClient.Mock
+  alias Daraja.Test.TokenCacheHelper
   alias Daraja.TokenCache
+
+  require TokenCacheHelper
 
   # async: false is required because Daraja.HTTPClient.Mock is a shared global
   # Agent; tests would race on the response queue. The cache itself is isolated
@@ -23,7 +26,7 @@ defmodule Daraja.TokenCacheTest do
 
   test "returns cached token on second call without hitting network", %{client: client} do
     name = unique_name()
-    start_supervised!({TokenCache, name: name})
+    start_cache!(name: name)
 
     Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-cached","expires_in":"3600"})})
 
@@ -34,7 +37,7 @@ defmodule Daraja.TokenCacheTest do
 
   test "fetches from network on cold miss", %{client: client} do
     name = unique_name()
-    start_supervised!({TokenCache, name: name})
+    start_cache!(name: name)
 
     Mock.push_response({:ok, 200, [], ~s({"access_token":"fresh-tok","expires_in":"3600"})})
 
@@ -43,7 +46,7 @@ defmodule Daraja.TokenCacheTest do
 
   test "does not cache error responses", %{client: client} do
     name = unique_name()
-    start_supervised!({TokenCache, name: name})
+    start_cache!(name: name)
 
     Mock.push_response({:ok, 401, [], "Unauthorized"})
     Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-after-error","expires_in":"3600"})})
@@ -54,7 +57,7 @@ defmodule Daraja.TokenCacheTest do
 
   test "isolates tokens by client credentials", %{client: client} do
     name = unique_name()
-    start_supervised!({TokenCache, name: name})
+    start_cache!(name: name)
 
     client2 = Client.new(consumer_key: "other_key", consumer_secret: "other_secret")
 
@@ -72,10 +75,10 @@ defmodule Daraja.TokenCacheTest do
     name = unique_name()
     ttl = 2
     refresh_before = 1
-    start_supervised!({TokenCache, name: name, ttl: ttl, refresh_before: refresh_before})
+    start_cache!(name: name, ttl: ttl, refresh_before: refresh_before)
 
-    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-initial","expires_in":"3600"})})
-    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-refreshed","expires_in":"3600"})})
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-initial","expires_in":"2"})})
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-refreshed","expires_in":"2"})})
 
     assert {:ok, "tok-initial"} = TokenCache.get_token(client, name)
 
@@ -86,7 +89,7 @@ defmodule Daraja.TokenCacheTest do
 
   test "respects custom server name", %{client: client} do
     name = unique_name()
-    start_supervised!({TokenCache, name: name})
+    start_cache!(name: name)
 
     Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-custom","expires_in":"3600"})})
 
@@ -96,19 +99,92 @@ defmodule Daraja.TokenCacheTest do
 
   test "fetches fresh token when cached token is expired", %{client: client} do
     name = unique_name()
-    start_supervised!({TokenCache, name: name})
+    ttl = 1
+    start_cache!(name: name, ttl: ttl, refresh_before: 0)
 
-    key = {client.consumer_key, client.environment}
-    :ets.insert(name, {key, {"old-tok", System.monotonic_time(:second) - 1}})
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"old-tok","expires_in":"1"})})
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"fresh","expires_in":"1"})})
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"fresh","expires_in":"1"})})
 
-    Mock.push_response({:ok, 200, [], ~s({"access_token":"fresh","expires_in":"3600"})})
+    assert {:ok, "old-tok"} = TokenCache.get_token(client, name)
+    Process.sleep(ttl * 1_000 + 100)
 
     assert {:ok, "fresh"} = TokenCache.get_token(client, name)
   end
 
+  test "fetches fresh token when consumer_secret rotates", %{client: client} do
+    name = unique_name()
+    start_cache!(name: name)
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-old","expires_in":"3600"})})
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-new","expires_in":"3600"})})
+
+    assert {:ok, "tok-old"} = TokenCache.get_token(client, name)
+
+    rotated =
+      Client.new(consumer_key: client.consumer_key, consumer_secret: "rotated_secret")
+
+    assert {:ok, "tok-new"} = TokenCache.get_token(rotated, name)
+  end
+
+  test "invalidate/1 evicts cached token for client", %{client: client} do
+    name = unique_name()
+    start_cache!(name: name)
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok","expires_in":"3600"})})
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-fresh","expires_in":"3600"})})
+
+    assert {:ok, "tok"} = TokenCache.get_token(client, name)
+    assert :ok = TokenCache.invalidate(client, name)
+    assert {:ok, "tok-fresh"} = TokenCache.get_token(client, name)
+  end
+
+  test "rejects external ETS writes", %{client: client} do
+    name = unique_name()
+    start_cache!(name: name)
+    key = cache_key(client)
+
+    assert_raise ArgumentError, fn ->
+      :ets.insert(name, {key, {"evil", System.monotonic_time(:second) + 3600, 3600}})
+    end
+  end
+
+  test "uses OAuth expires_in instead of configured ttl", %{client: client} do
+    name = unique_name()
+    start_cache!(name: name, ttl: 3600, refresh_before: 0)
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"short-lived","expires_in":"1"})})
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"refetched","expires_in":"1"})})
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"refetched","expires_in":"1"})})
+
+    assert {:ok, "short-lived"} = TokenCache.get_token(client, name)
+
+    key = cache_key(client)
+    assert [{^key, {_token, _expires_at, 1}}] = :ets.lookup(name, key)
+
+    Process.sleep(1_100)
+
+    assert {:ok, "refetched"} = TokenCache.get_token(client, name)
+  end
+
+  test "falls back to configured ttl when expires_in is missing", %{client: client} do
+    name = unique_name()
+    ttl = 1
+    start_cache!(name: name, ttl: ttl, refresh_before: 0)
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"no-expiry"})})
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"refetched"})})
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"refetched"})})
+
+    assert {:ok, "no-expiry"} = TokenCache.get_token(client, name)
+    Process.sleep(ttl * 1_000 + 100)
+
+    assert {:ok, "refetched"} = TokenCache.get_token(client, name)
+  end
+
   test "handles ETS ArgumentError during startup race", %{client: client} do
     name = unique_name()
-    pid = start_supervised!({TokenCache, name: name})
+    pid = start_cache!(name: name)
 
     Mock.push_response({:ok, 200, [], ~s({"access_token":"tok","expires_in":"3600"})})
 
@@ -120,7 +196,7 @@ defmodule Daraja.TokenCacheTest do
 
   test "returns already-cached token when re-checked under GenServer lock", %{client: client} do
     name = unique_name()
-    start_supervised!({TokenCache, name: name})
+    start_cache!(name: name)
 
     Mock.push_response({:ok, 200, [], ~s({"access_token":"tok","expires_in":"3600"})})
 
@@ -132,22 +208,200 @@ defmodule Daraja.TokenCacheTest do
     assert {:error, :no_response_queued} = Mock.request(:get, "", [], "")
   end
 
-  test "cleans up token and timer when background refresh fails", %{client: client} do
+  test "retains token and schedules retry when background refresh fails", %{client: client} do
     name = unique_name()
-    start_supervised!({TokenCache, name: name})
+    start_cache!(name: name)
 
     Mock.push_response({:ok, 200, [], ~s({"access_token":"tok","expires_in":"3600"})})
     assert {:ok, "tok"} = TokenCache.get_token(client, name)
 
-    key = {client.consumer_key, client.environment}
-    assert [{^key, _}] = :ets.lookup(name, key)
+    key = cache_key(client)
+    assert [{^key, {"tok", _expires_at, _ttl}}] = :ets.lookup(name, key)
 
     Mock.push_response({:ok, 401, [], "Unauthorized"})
-    send(GenServer.whereis(name), {:refresh, key, client})
+    send(GenServer.whereis(name), {:refresh, key})
     :sys.get_state(name)
 
-    assert [] = :ets.lookup(name, key)
+    assert [{^key, {"tok", _expires_at, _ttl}}] = :ets.lookup(name, key)
+    assert {:ok, "tok"} = TokenCache.get_token(client, name)
+    assert {:error, :no_response_queued} = Mock.request(:get, "", [], "")
   end
 
+  test "refetches via GenServer when ETS entry is expired", %{client: client} do
+    name = unique_name()
+    start_cache!(name: name)
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"old-tok","expires_in":"3600"})})
+    assert {:ok, "old-tok"} = TokenCache.get_token(client, name)
+
+    key = cache_key(client)
+    past = System.monotonic_time(:second) - 1
+
+    :sys.replace_state(name, fn state ->
+      :ets.insert(state.table, {key, {"old-tok", past, 3600}})
+      state
+    end)
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"fresh","expires_in":"3600"})})
+    assert {:ok, "fresh"} = TokenCache.get_token(client, name)
+  end
+
+  test "handle_call refetches when token expired under GenServer lock", %{client: client} do
+    name = unique_name()
+    start_cache!(name: name)
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"old-tok","expires_in":"3600"})})
+    assert {:ok, "old-tok"} = TokenCache.get_token(client, name)
+
+    key = cache_key(client)
+    past = System.monotonic_time(:second) - 1
+
+    :sys.replace_state(name, fn state ->
+      :ets.insert(state.table, {key, {"old-tok", past, 3600}})
+      state
+    end)
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"fresh","expires_in":"3600"})})
+    assert {:ok, "fresh"} = GenServer.call(name, {:fetch_and_cache, client})
+  end
+
+  test "ignores refresh messages for unknown cache keys", %{client: client} do
+    name = unique_name()
+    start_cache!(name: name)
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok","expires_in":"3600"})})
+    assert {:ok, "tok"} = TokenCache.get_token(client, name)
+
+    send(GenServer.whereis(name), {:refresh, {:unknown, :key, <<>>}})
+    assert {:ok, "tok"} = TokenCache.get_token(client, name)
+    assert {:error, :no_response_queued} = Mock.request(:get, "", [], "")
+  end
+
+  test "raises when refresh_before is greater than or equal to ttl" do
+    assert {:error, {%ArgumentError{message: msg}, _}} =
+             GenServer.start(TokenCache, name: unique_name(), ttl: 60, refresh_before: 120)
+
+    assert msg =~ "refresh_before (120) must be less than ttl (60)"
+
+    assert {:error, {%ArgumentError{message: msg2}, _}} =
+             GenServer.start(TokenCache, name: unique_name(), ttl: 60, refresh_before: 60)
+
+    assert msg2 =~ "refresh_before (60) must be less than ttl (60)"
+  end
+
+  test "shares one in-flight fetch for concurrent callers on the same key", %{client: client} do
+    name = unique_name()
+    start_cache!(name: name)
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-shared","expires_in":"3600"})})
+
+    tasks = [
+      Task.async(fn -> TokenCache.get_token(client, name) end),
+      Task.async(fn -> TokenCache.get_token(client, name) end)
+    ]
+
+    assert [{:ok, "tok-shared"}, {:ok, "tok-shared"}] = Task.await_many(tasks, 5_000)
+    assert {:error, :no_response_queued} = Mock.request(:get, "", [], "")
+  end
+
+  test "ignores task results for unknown references", %{client: client} do
+    name = unique_name()
+    start_cache!(name: name)
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok","expires_in":"3600"})})
+    assert {:ok, "tok"} = TokenCache.get_token(client, name)
+
+    send(GenServer.whereis(name), {make_ref(), :ignored})
+    assert {:ok, "tok"} = TokenCache.get_token(client, name)
+    assert {:error, :no_response_queued} = Mock.request(:get, "", [], "")
+  end
+
+  test "ignores DOWN for in-flight refresh with no waiters", %{client: client} do
+    name = unique_name()
+    start_cache!(name: name)
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok","expires_in":"3600"})})
+    assert {:ok, "tok"} = TokenCache.get_token(client, name)
+
+    key = cache_key(client)
+    ref = make_ref()
+
+    :sys.replace_state(name, fn state ->
+      %{state | in_flight: Map.put(state.in_flight, key, {ref, [], :refresh})}
+    end)
+
+    send(GenServer.whereis(name), {:DOWN, ref, :process, self(), :kill})
+    assert {:ok, "tok"} = TokenCache.get_token(client, name)
+  end
+
+  test "replies with fetch_crashed when an in-flight fetch task dies", %{client: client} do
+    name = unique_name()
+    start_cache!(name: name)
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok","expires_in":"3600"})})
+    assert {:ok, "tok"} = TokenCache.get_token(client, name)
+
+    key = cache_key(client)
+    task_ref = make_ref()
+    from_ref = make_ref()
+    from = {self(), from_ref}
+
+    :sys.replace_state(name, fn state ->
+      %{state | in_flight: Map.put(state.in_flight, key, {task_ref, [from], :fetch})}
+    end)
+
+    send(GenServer.whereis(name), {:DOWN, task_ref, :process, self(), :kill})
+    assert_receive {^from_ref, {:error, :http_error, :fetch_crashed}}
+    assert {:ok, "tok"} = TokenCache.get_token(client, name)
+  end
+
+  test "schedules refresh retry when an in-flight refresh task dies", %{client: client} do
+    name = unique_name()
+    start_cache!(name: name)
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok","expires_in":"3600"})})
+    assert {:ok, "tok"} = TokenCache.get_token(client, name)
+
+    key = cache_key(client)
+    ref = make_ref()
+
+    :sys.replace_state(name, fn state ->
+      %{state | in_flight: Map.put(state.in_flight, key, {ref, [self()], :refresh})}
+    end)
+
+    send(GenServer.whereis(name), {:DOWN, ref, :process, self(), :kill})
+
+    assert %{
+             in_flight: in_flight,
+             timers: %{^key => _retry_timer}
+           } = :sys.get_state(name)
+
+    assert map_size(in_flight) == 0
+    assert {:ok, "tok"} = TokenCache.get_token(client, name)
+  end
+
+  test "fetches different credentials concurrently", %{client: client} do
+    name = unique_name()
+    start_cache!(name: name)
+
+    client2 = Client.new(consumer_key: "other_key", consumer_secret: "other_secret")
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-1","expires_in":"3600"})})
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-2","expires_in":"3600"})})
+
+    tasks = [
+      Task.async(fn -> TokenCache.get_token(client, name) end),
+      Task.async(fn -> TokenCache.get_token(client2, name) end)
+    ]
+
+    assert [{:ok, "tok-1"}, {:ok, "tok-2"}] = Task.await_many(tasks, 5_000)
+  end
+
+  defp start_cache!(opts), do: TokenCacheHelper.start!(opts)
+
   defp unique_name, do: :"test_cache_#{System.unique_integer([:positive])}"
+
+  defp cache_key(%Client{} = client) do
+    {client.consumer_key, client.environment, :crypto.hash(:sha256, client.consumer_secret)}
+  end
 end

@@ -2,7 +2,10 @@ defmodule Daraja.HTTPClientConfigTest do
   use ExUnit.Case, async: false
 
   setup do
-    on_exit(fn -> Application.delete_env(:daraja, :http_client) end)
+    on_exit(fn ->
+      Application.delete_env(:daraja, :http_client)
+      Daraja.Runtime.reset!()
+    end)
   end
 
   test "raises when Finch adapter is default but Finch is not available" do

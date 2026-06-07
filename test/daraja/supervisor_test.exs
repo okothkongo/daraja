@@ -23,6 +23,7 @@ defmodule Daraja.SupervisorTest do
     start_supervised!({Daraja.Supervisor, name: sup_name, cache_name: cache_name})
 
     assert is_pid(GenServer.whereis(cache_name))
+    assert is_pid(Process.whereis(Daraja.TokenCache.TaskSupervisor))
   end
 
   test "supervised TokenCache serves tokens via cache_name", %{client: client} do

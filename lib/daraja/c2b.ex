@@ -46,9 +46,9 @@ defmodule Daraja.C2B do
   @type result ::
           {:ok, Response.Success.t()}
           | {:error, :invalid_request, list()}
-          | {:error, :auth_failed, term()}
-          | {:error, :http_error, term()}
-          | {:error, :request_failed, Response.Error.t()}
+          | {:error, :auth_failed, Daraja.APIError.t()}
+          | {:error, :http_error, Daraja.APIError.t() | term()}
+          | {:error, :request_failed, Response.Error.t() | Daraja.APIError.t()}
 
   @doc """
   Registers callback URLs for C2B payment notifications.
@@ -81,6 +81,10 @@ defmodule Daraja.C2B do
   `command_id` must be `"CustomerPayBillOnline"` or `"CustomerBuyGoodsOnline"`.
   """
   @spec simulate(Client.t(), map() | SimulateRequest.t()) :: result()
+  def simulate(%Client{environment: :production}, _request_or_params) do
+    {:error, :invalid_request, [:sandbox_only]}
+  end
+
   def simulate(%Client{} = client, %SimulateRequest{} = request) do
     do_simulate(client, request)
   end
@@ -93,49 +97,54 @@ defmodule Daraja.C2B do
   end
 
   defp do_register_url(%Client{} = client, %RegisterUrlRequest{} = request) do
-    with {:ok, token} <- Daraja.Auth.get_token(client) do
-      body =
-        JSON.encode!(%{
-          "ShortCode" => request.short_code,
-          "ResponseType" => request.response_type,
-          "ConfirmationURL" => request.confirmation_url,
-          "ValidationURL" => request.validation_url
-        })
+    body =
+      JSON.encode!(%{
+        "ShortCode" => request.short_code,
+        "ResponseType" => request.response_type,
+        "ConfirmationURL" => request.confirmation_url,
+        "ValidationURL" => request.validation_url
+      })
 
-      url = Client.base_url(client) <> @register_url_path
+    url = Client.base_url(client) <> @register_url_path
+
+    Daraja.Auth.with_token(client, fn token ->
       headers = [{"Authorization", "Bearer " <> token}, {"Content-Type", "application/json"}]
       make_request(url, headers, body)
-    end
+    end)
   end
 
   defp do_simulate(%Client{} = client, %SimulateRequest{} = request) do
-    with {:ok, token} <- Daraja.Auth.get_token(client) do
-      body =
-        JSON.encode!(%{
-          "ShortCode" => request.short_code,
-          "CommandID" => request.command_id,
-          "Amount" => request.amount,
-          "Msisdn" => request.msisdn,
-          "BillRefNumber" => request.bill_ref_number || ""
-        })
+    body =
+      JSON.encode!(%{
+        "ShortCode" => request.short_code,
+        "CommandID" => request.command_id,
+        "Amount" => request.amount,
+        "Msisdn" => request.msisdn,
+        "BillRefNumber" => request.bill_ref_number || ""
+      })
 
-      url = Client.base_url(client) <> @simulate_path
+    url = Client.base_url(client) <> @simulate_path
+
+    Daraja.Auth.with_token(client, fn token ->
       headers = [{"Authorization", "Bearer " <> token}, {"Content-Type", "application/json"}]
       make_request(url, headers, body)
-    end
+    end)
   end
 
   defp make_request(url, headers, body) do
     case Daraja.http_client().request(:post, url, headers, body) do
-      {:ok, _status, _headers, response_body} -> parse_response(response_body)
-      {:error, reason} -> {:error, :http_error, reason}
+      {:ok, status, _headers, response_body} ->
+        Daraja.HTTPResponse.dispatch(status, response_body, &parse_response/2)
+
+      {:error, reason} ->
+        {:error, :http_error, reason}
     end
   end
 
-  defp parse_response(body) do
+  defp parse_response(body, status) do
     case JSON.decode(body) do
       {:ok, map} -> map |> Response.from_map() |> wrap_response()
-      {:error, _} -> {:error, :request_failed, body}
+      {:error, _} -> {:error, :request_failed, Daraja.APIError.from_body(body, status: status)}
     end
   end
 

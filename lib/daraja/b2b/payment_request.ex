@@ -34,6 +34,9 @@ defmodule Daraja.B2B.PaymentRequest do
   inside `PaymentRequest.new/1`. In production, prefer pre-encrypting with
   `Daraja.SecurityCredential.encrypt/2` and storing only the resulting Base64
   string — so plaintext passwords never live in application state at runtime.
+  When a tuple is supplied via application env, it is encrypted as soon as
+  the env fallback is read; the tuple nevertheless remains in
+  `Application` env until you replace it with a pre-encrypted string.
 
   ## Application env fallbacks
 
@@ -141,7 +144,8 @@ defmodule Daraja.B2B.PaymentRequest do
       |> normalize_keys()
       |> apply_env_fallbacks()
 
-    with {:ok, params} <- resolve_security_credential(params) do
+    with {:ok, params} <- resolve_security_credential(params),
+         :ok <- validate_callback_urls(params) do
       missing = Enum.filter(@required, fn key -> is_nil(params[key]) end)
 
       cond do
@@ -160,6 +164,10 @@ defmodule Daraja.B2B.PaymentRequest do
 
         params[:receiver_identifier_type] not in @valid_identifier_types ->
           {:error, :invalid_request, [{:receiver_identifier_type, "must be 2 or 4"}]}
+
+        match?({:error, _}, Daraja.RequestValidation.validate_amount(params[:amount])) ->
+          {:error, :invalid_request,
+           [elem(Daraja.RequestValidation.validate_amount(params[:amount]), 1)]}
 
         true ->
           {:ok,
@@ -188,6 +196,13 @@ defmodule Daraja.B2B.PaymentRequest do
     end
   end
 
+  defp validate_callback_urls(params) do
+    case Daraja.CallbackURL.validate_all(params, [:queue_timeout_url, :result_url]) do
+      :ok -> :ok
+      {:error, errors} -> {:error, :invalid_request, errors}
+    end
+  end
+
   defp normalize_keys(params) do
     Map.new(params, fn
       {k, v} when is_binary(k) -> {String.to_existing_atom(k), v}
@@ -199,10 +214,26 @@ defmodule Daraja.B2B.PaymentRequest do
 
   defp apply_env_fallbacks(params) do
     Enum.reduce(@env_fallbacks, params, fn {field, env_key}, acc ->
-      Map.update(acc, field, Daraja.Config.get(env_key, nil), fn
-        nil -> Daraja.Config.get(env_key, nil)
-        value -> value
-      end)
+      case Map.get(acc, field) do
+        nil -> Map.put(acc, field, env_value(field, env_key))
+        _value -> acc
+      end
     end)
+  end
+
+  defp env_value(:security_credential, env_key), do: resolve_env_credential(env_key)
+  defp env_value(_field, env_key), do: Daraja.Config.get(env_key, nil)
+
+  defp resolve_env_credential(env_key) do
+    case Daraja.Config.get(env_key, nil) do
+      {_password, _pem} = tuple ->
+        case Daraja.SecurityCredential.resolve(tuple) do
+          {:ok, credential} -> credential
+          {:error, _} -> tuple
+        end
+
+      value ->
+        value
+    end
   end
 end

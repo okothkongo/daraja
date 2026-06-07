@@ -125,13 +125,30 @@ defmodule Daraja do
           consumer_secret: merchant.consumer_secret
         )
 
+  ## Callback security
+
+  Daraja does not sign inbound webhooks. Use `Daraja.Callback.Security` for IP
+  allowlisting and shared-secret checks, `Daraja.Callback.Guard` for idempotency,
+  and `parse/1` on the product callback modules before fulfilling orders.
+
+  Default callback IP allowlists are community-documented Safaricom ranges—not
+  fetched from the live Daraja API. Override them for production:
+
+      config :daraja,
+        callback_cidrs: ["196.201.212.0/24", "196.201.213.0/24", "196.201.214.0/24"],
+        callback_hosts: ["196.201.214.200", "196.201.212.127"]
+
   ## Token Caching
 
-  By default every API call fetches a fresh OAuth token from the network. Add
-  `Daraja.Supervisor` to your application's supervision tree to enable
-  ETS-backed caching — subsequent calls reuse the token until it expires:
+  **Production deployments must start both Finch and `Daraja.Supervisor`.** Without
+  the supervisor, every API call performs a separate OAuth round-trip (logged once
+  as a warning when `:warn_uncached_token` is enabled, which is the default outside
+  `:test`).
+
+  Add both to your application's supervision tree:
 
       children = [
+        {Finch, name: Daraja.Finch},
         {Daraja.Supervisor, []}
       ]
 
@@ -147,47 +164,36 @@ defmodule Daraja do
   The `:token_cache` config value must be an atom. Omit it to use the default
   `Daraja.TokenCache`. See `Daraja.Auth.get_token/1` for details.
 
+  ## HTTP timeouts and retries
+
+  The default Finch adapter uses a 10 second receive timeout. Override in config:
+
+      config :daraja, :http_receive_timeout, 10_000
+
+  OAuth token fetches can opt into retry with exponential backoff (disabled by default):
+
+      config :daraja, :http_retry,
+        enabled: true,
+        max_attempts: 3,
+        base_ms: 100,
+        max_ms: 2_000
+
+  Payment POST calls are never retried automatically.
+
   ## Custom HTTP Client
 
   Implement `Daraja.HTTPClient` and configure it:
 
       config :daraja, :http_client, MyApp.CustomHTTPClient
-  """
 
-  @http_client_callback_arity 4
+  Custom adapters must verify TLS peers, avoid logging credentials or request
+  bodies, use bounded timeouts, and not follow redirects to unintended hosts.
+  See `Daraja.HTTPClient.Compliance` for a review checklist.
+  """
 
   @doc false
   def http_client(ensure_loaded \\ &Code.ensure_loaded?/1) do
-    client = Application.get_env(:daraja, :http_client, Daraja.HTTPClient.Finch)
-
-    cond do
-      is_nil(client) ->
-        raise "`:http_client` is configured as nil. Set it to a module that implements Daraja.HTTPClient."
-
-      client == Daraja.HTTPClient.Finch and not ensure_loaded.(Finch) ->
-        raise """
-        Daraja.HTTPClient.Finch is not available. Add {:finch, "~> 0.18"} to \
-        your application's dependencies, or configure a custom HTTP client:
-
-            config :daraja, :http_client, MyApp.CustomHTTPClient
-        """
-
-      not ensure_loaded.(client) ->
-        raise """
-        HTTP client #{inspect(client)} is not available. \
-        Check that the module name is spelled correctly and its containing \
-        application is in your deps.
-        """
-
-      not function_exported?(client, :request, @http_client_callback_arity) ->
-        raise """
-        #{inspect(client)} does not implement the Daraja.HTTPClient behaviour \
-        (missing request/#{@http_client_callback_arity}). \
-        Ensure the module calls `@behaviour Daraja.HTTPClient`.
-        """
-
-      true ->
-        client
-    end
+    cache = ensure_loaded == (&Code.ensure_loaded?/1)
+    Daraja.Runtime.http_client_module(ensure_loaded, cache)
   end
 end

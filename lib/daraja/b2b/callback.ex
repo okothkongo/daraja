@@ -5,6 +5,10 @@ defmodule Daraja.B2B.Callback do
   B2B transactions are asynchronous; this module parses successful and unsuccessful
   callback payloads into typed structs and provides helpers to extract
   `ResultParameters` values by key.
+
+  Verify inbound requests with `Daraja.Callback.Security`, deduplicate on
+  `originator_conversation_id` with `Daraja.Callback.Guard`, and use `parse/1`
+  on untrusted input.
   """
 
   defmodule Result do
@@ -59,7 +63,18 @@ defmodule Daraja.B2B.Callback do
     }
   end
 
-  def from_map(_), do: %Result{}
+  @doc """
+  Parses a B2B callback map from an untrusted HTTP request.
+  """
+  @spec parse(map()) :: {:ok, Result.t()} | {:error, :invalid_callback, String.t()}
+  def parse(%{"Result" => result_map} = map) when is_map(result_map) do
+    case Daraja.Callback.Validate.present_string(result_map["OriginatorConversationID"]) do
+      :ok -> {:ok, from_map(map)}
+      {:error, _} -> {:error, :invalid_callback, "missing OriginatorConversationID"}
+    end
+  end
+
+  def parse(_), do: {:error, :invalid_callback, "missing Result"}
 
   @doc """
   Builds the JSON response body used to acknowledge a B2B result callback.
@@ -96,19 +111,13 @@ defmodule Daraja.B2B.Callback do
   defp extract_result_parameters(result_map) do
     result_map
     |> get_in(["ResultParameters", "ResultParameter"])
-    |> normalize_result_parameter_list()
-    |> Enum.map(fn %{"Key" => key, "Value" => value} -> %{key: key, value: value} end)
+    |> Daraja.Callback.Items.extract_key_value()
   end
 
-  defp normalize_result_parameter_list(nil), do: []
-  defp normalize_result_parameter_list(list) when is_list(list), do: list
-  defp normalize_result_parameter_list(map) when is_map(map), do: [map]
-  defp normalize_result_parameter_list(_), do: []
-
   defp extract_reference_item(result_map) do
-    case get_in(result_map, ["ReferenceData", "ReferenceItem"]) do
-      %{"Key" => key, "Value" => value} -> %{key: key, value: value}
-      _ -> nil
-    end
+    result_map
+    |> get_in(["ReferenceData", "ReferenceItem"])
+    |> Daraja.Callback.Items.extract_key_value()
+    |> List.first()
   end
 end
