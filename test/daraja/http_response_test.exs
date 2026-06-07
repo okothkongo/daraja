@@ -9,7 +9,7 @@ defmodule Daraja.HTTPResponseTest do
     "errorMessage": "Bad Request"
   })
 
-  defp parse(body) do
+  defp parse(body, status) do
     case JSON.decode(body) do
       {:ok, map} ->
         case Response.from_map(map) do
@@ -18,7 +18,7 @@ defmodule Daraja.HTTPResponseTest do
         end
 
       {:error, _} ->
-        {:error, :request_failed, APIError.from_body(body)}
+        {:error, :request_failed, APIError.from_body(body, status: status)}
     end
   end
 
@@ -26,42 +26,42 @@ defmodule Daraja.HTTPResponseTest do
     body = ~s({"CheckoutRequestID":"ws_CO_1","MerchantRequestID":"m","ResponseCode":"0"})
 
     assert {:ok, %Response.Success{checkout_request_id: "ws_CO_1"}} =
-             Daraja.HTTPResponse.dispatch(200, body, &parse/1)
+             Daraja.HTTPResponse.dispatch(200, body, &parse/2)
   end
 
   test "parses 400 responses with Daraja error envelope" do
     assert {:error, :request_failed, %Response.Error{error_code: "400.002.02"}} =
-             Daraja.HTTPResponse.dispatch(400, @daraja_error, &parse/1)
+             Daraja.HTTPResponse.dispatch(400, @daraja_error, &parse/2)
   end
 
   test "maps 401 and 403 to auth_failed without parsing" do
     assert {:error, :auth_failed,
             %APIError{status: 401, error_message: "non-JSON error response"}} =
-             Daraja.HTTPResponse.dispatch(401, "Unauthorized", &parse/1)
+             Daraja.HTTPResponse.dispatch(401, "Unauthorized", &parse/2)
 
     assert {:error, :auth_failed,
             %APIError{status: 403, error_message: "non-JSON error response"}} =
-             Daraja.HTTPResponse.dispatch(403, "Forbidden", &parse/1)
+             Daraja.HTTPResponse.dispatch(403, "Forbidden", &parse/2)
   end
 
   test "maps 5xx to http_error without parsing" do
     assert {:error, :http_error, %APIError{status: 502, error_message: "non-JSON error response"}} =
-             Daraja.HTTPResponse.dispatch(502, "<html>", &parse/1)
+             Daraja.HTTPResponse.dispatch(502, "<html>", &parse/2)
 
     assert {:error, :http_error, %APIError{status: 500, error_message: "non-JSON error response"}} =
-             Daraja.HTTPResponse.dispatch(500, "Internal Server Error", &parse/1)
+             Daraja.HTTPResponse.dispatch(500, "Internal Server Error", &parse/2)
   end
 
   test "maps other unexpected statuses to http_error" do
     assert {:error, :http_error, %APIError{status: 404, error_message: "non-JSON error response"}} =
-             Daraja.HTTPResponse.dispatch(404, "Not Found", &parse/1)
+             Daraja.HTTPResponse.dispatch(404, "Not Found", &parse/2)
   end
 
   test "parses JSON auth failures into APIError" do
     body = ~s({"requestId":"r","errorCode":"400.003.01","errorMessage":"Invalid Access Token"})
 
     assert {:error, :auth_failed, %APIError{error_code: "400.003.01", status: 401}} =
-             Daraja.HTTPResponse.dispatch(401, body, &parse/1)
+             Daraja.HTTPResponse.dispatch(401, body, &parse/2)
   end
 
   test "detects invalid access token in Daraja error envelope" do

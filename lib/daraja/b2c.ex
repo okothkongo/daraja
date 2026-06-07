@@ -92,17 +92,17 @@ defmodule Daraja.B2C do
   defp make_request(url, headers, body) do
     case Daraja.http_client().request(:post, url, headers, body) do
       {:ok, status, _headers, response_body} ->
-        Daraja.HTTPResponse.dispatch(status, response_body, &parse_response/1)
+        Daraja.HTTPResponse.dispatch(status, response_body, &parse_response/2)
 
       {:error, reason} ->
         {:error, :http_error, reason}
     end
   end
 
-  defp parse_response(body) do
+  defp parse_response(body, status) do
     case JSON.decode(body) do
       {:ok, map} -> map |> Response.from_map() |> wrap_response()
-      {:error, _} -> {:error, :request_failed, Daraja.APIError.from_body(body)}
+      {:error, _} -> {:error, :request_failed, Daraja.APIError.from_body(body, status: status)}
     end
   end
 

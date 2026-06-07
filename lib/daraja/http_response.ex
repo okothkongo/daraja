@@ -20,8 +20,8 @@ defmodule Daraja.HTTPResponse do
   alias Daraja.APIError
 
   @spec dispatch(Daraja.HTTPClient.status(), binary(), (binary() -> term())) :: term()
-  def dispatch(status, body, parse) when status in 200..299, do: parse.(body)
-  def dispatch(400, body, parse), do: parse.(body)
+  def dispatch(status, body, parse) when status in 200..299, do: parse.(body, status)
+  def dispatch(400, body, parse), do: parse.(body, 400)
 
   def dispatch(status, body, _parse) when status in [401, 403] do
     {:error, :auth_failed, APIError.from_body(body, status: status)}

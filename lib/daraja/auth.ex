@@ -155,7 +155,7 @@ defmodule Daraja.Auth do
 
     case Daraja.http_client().request(:get, url, headers, "") do
       {:ok, 200, _headers, body} ->
-        decode_body(body, default_ttl)
+        decode_body(body, default_ttl, 200)
 
       {:ok, status, _headers, body} ->
         {:error, :auth_failed, APIError.from_body(body, status: status)}
@@ -165,13 +165,13 @@ defmodule Daraja.Auth do
     end
   end
 
-  defp decode_body(body, default_ttl) do
+  defp decode_body(body, default_ttl, status) do
     case JSON.decode(body) do
       {:ok, %{"access_token" => token} = map} ->
         {:ok, %{access_token: token, expires_in: parse_expires_in(map, default_ttl)}}
 
       _ ->
-        {:error, :auth_failed, APIError.from_body(body)}
+        {:error, :auth_failed, APIError.from_body(body, status: status)}
     end
   end
 
