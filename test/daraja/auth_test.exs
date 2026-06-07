@@ -5,6 +5,8 @@ defmodule Daraja.AuthTest do
   alias Daraja.HTTPClient.Mock
   alias Daraja.Test.TokenCacheHelper
 
+  require TokenCacheHelper
+
   setup do
     Mock.reset()
 

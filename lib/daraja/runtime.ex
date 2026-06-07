@@ -107,7 +107,7 @@ defmodule Daraja.Runtime do
   end
 
   defp uncached_token_warnings_enabled? do
-    Application.get_env(:daraja, :warn_uncached_token, Mix.env() != :test)
+    Application.get_env(:daraja, :warn_uncached_token, true)
   end
 
   defp resolve_http_client(client, ensure_loaded) do

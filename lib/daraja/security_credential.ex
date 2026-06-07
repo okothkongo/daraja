@@ -241,6 +241,6 @@ defmodule Daraja.SecurityCredential do
   end
 
   defp tuple_credential_warnings_enabled? do
-    Application.get_env(:daraja, :warn_tuple_security_credential, Mix.env() != :test)
+    Application.get_env(:daraja, :warn_tuple_security_credential, true)
   end
 end

@@ -6,6 +6,8 @@ defmodule Daraja.TokenCacheTest do
   alias Daraja.Test.TokenCacheHelper
   alias Daraja.TokenCache
 
+  require TokenCacheHelper
+
   # async: false is required because Daraja.HTTPClient.Mock is a shared global
   # Agent; tests would race on the response queue. The cache itself is isolated
   # per test via unique names.

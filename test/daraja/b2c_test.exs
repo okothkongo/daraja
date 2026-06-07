@@ -4,6 +4,9 @@ defmodule Daraja.B2CTest do
   alias Daraja.B2C.{PaymentRequest, Response}
   alias Daraja.{APIError, Client}
   alias Daraja.HTTPClient.Mock
+  alias Daraja.Test.TokenCacheHelper
+
+  require TokenCacheHelper
 
   @cert_pem File.read!("test/support/fixtures/security_credential_cert.pem")
 
@@ -196,7 +199,7 @@ defmodule Daraja.B2CTest do
 
     test "invalidates cache and retries after payment 401", %{client: client} do
       name = :"b2c_cache_#{System.unique_integer([:positive])}"
-      Daraja.Test.TokenCacheHelper.start!(name: name)
+      TokenCacheHelper.start!(name: name)
       Application.put_env(:daraja, :token_cache, name)
       on_exit(fn -> Application.delete_env(:daraja, :token_cache) end)
 

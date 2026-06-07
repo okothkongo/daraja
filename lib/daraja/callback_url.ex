@@ -138,7 +138,7 @@ defmodule Daraja.CallbackURL do
 
   defp ip_blocked?(host, url) do
     lookup_host =
-      if is_binary(url) && String.contains?(url, "[#{host}]"), do: "[#{host}]", else: host
+      if String.contains?(url, "[#{host}]"), do: "[#{host}]", else: host
 
     lookup_host
     |> normalize_ip_host()
