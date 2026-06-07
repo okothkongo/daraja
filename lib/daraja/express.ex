@@ -103,15 +103,13 @@ defmodule Daraja.Express do
   defp validate_client(%Client{} = client) do
     missing = Enum.filter(@stk_client_fields, fn key -> is_nil(Map.fetch!(client, key)) end)
 
-    cond do
-      missing != [] ->
-        {:error, :invalid_client, missing}
-
-      true ->
-        case Daraja.CallbackURL.validate(client.callback_url, environment: client.environment) do
-          :ok -> :ok
-          {:error, message} -> {:error, :invalid_client, [{:callback_url, message}]}
-        end
+    if missing != [] do
+      {:error, :invalid_client, missing}
+    else
+      case Daraja.CallbackURL.validate(client.callback_url, environment: client.environment) do
+        :ok -> :ok
+        {:error, message} -> {:error, :invalid_client, [{:callback_url, message}]}
+      end
     end
   end
 

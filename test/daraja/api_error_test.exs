@@ -74,4 +74,12 @@ defmodule Daraja.APIErrorTest do
     refute inspect(error) =~ "Unauthorized"
     assert APIError.raw_body(error) == "Unauthorized"
   end
+
+  test "from_body/1 truncates raw_body longer than 512 bytes" do
+    body = String.duplicate("x", 600)
+
+    assert %APIError{raw_body: truncated} = APIError.from_body(body)
+    assert byte_size(truncated) == 515
+    assert String.ends_with?(truncated, "...")
+  end
 end

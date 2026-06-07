@@ -3,6 +3,8 @@ defmodule Daraja.C2B.Response do
   Response structs for the C2B Register URL and Simulate APIs.
   """
 
+  alias Daraja.ResponseCode
+
   defmodule Success do
     @moduledoc "Returned when Safaricom successfully accepts a C2B request."
 
@@ -37,8 +39,6 @@ defmodule Daraja.C2B.Response do
   Note: Safaricom's API uses the misspelled key `OriginatorCoversationID`
   (missing the second 'n'). Both spellings are handled here for resilience.
   """
-  alias Daraja.ResponseCode
-
   @spec from_map(map()) :: Success.t() | Error.t()
   def from_map(%{"ResponseCode" => _} = map) do
     if ResponseCode.success?(map) do

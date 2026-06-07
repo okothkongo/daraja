@@ -3,6 +3,8 @@ defmodule Daraja.B2C.Response do
   Response structs for the B2C Payment Request API.
   """
 
+  alias Daraja.ResponseCode
+
   defmodule Success do
     @moduledoc "Returned when Safaricom accepts a B2C payment request."
 
@@ -39,8 +41,6 @@ defmodule Daraja.B2C.Response do
   Note: Safaricom may return the misspelled key `OriginatorCoversationID`
   (missing the second 'n'). Both spellings are handled for resilience.
   """
-  alias Daraja.ResponseCode
-
   @spec from_map(map()) :: Success.t() | Error.t()
   def from_map(%{"ConversationID" => _} = map) do
     if ResponseCode.success?(map) do

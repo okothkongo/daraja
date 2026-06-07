@@ -1,6 +1,9 @@
 defmodule Daraja.SecurityCredentialTest do
   use ExUnit.Case, async: true
 
+  import ExUnit.CaptureLog
+
+  alias Daraja.Runtime
   alias Daraja.SecurityCredential
 
   @cert_pem File.read!("test/support/fixtures/security_credential_cert.pem")
@@ -8,10 +11,14 @@ defmodule Daraja.SecurityCredentialTest do
   @fixture_pin "yGsAE85gJh3satQK/3DRqZCjovsVGOqmUQ22wXvoIko"
 
   setup do
+    Runtime.reset!()
+
     on_exit(fn ->
       Application.delete_env(:daraja, :security_credential_pins)
       Application.delete_env(:daraja, :enforce_security_credential_pins)
       Application.delete_env(:daraja, :environment)
+      Application.delete_env(:daraja, :warn_tuple_security_credential)
+      Runtime.reset!()
     end)
 
     :ok
@@ -254,6 +261,24 @@ defmodule Daraja.SecurityCredentialTest do
 
       assert {:error, :invalid_public_key} = SecurityCredential.encrypt("password", bad_pem)
     end
+  end
+
+  test "warns once when resolving tuple credentials" do
+    Application.put_env(:daraja, :warn_tuple_security_credential, true)
+
+    {_private_key, public_key} = rsa_keypair()
+
+    public_pem =
+      :public_key.pem_encode([:public_key.pem_entry_encode(:RSAPublicKey, public_key)])
+
+    log =
+      capture_log(fn ->
+        assert {:ok, _} = SecurityCredential.resolve({"password", public_pem})
+        assert {:ok, _} = SecurityCredential.resolve({"password", public_pem})
+      end)
+
+    assert log =~ "Encrypting security credentials from a {password, pem} tuple"
+    assert length(:binary.matches(log, "Encrypting security credentials")) == 1
   end
 
   test "returns encryption_failed when the password is too large for the key" do

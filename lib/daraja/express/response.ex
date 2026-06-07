@@ -3,6 +3,8 @@ defmodule Daraja.Express.Response do
   Response structs for the STK Push API.
   """
 
+  alias Daraja.ResponseCode
+
   defmodule Success do
     @moduledoc "Returned when Safaricom successfully accepts the STK Push request."
 
@@ -34,8 +36,6 @@ defmodule Daraja.Express.Response do
 
     defstruct [:request_id, :error_code, :error_message]
   end
-
-  alias Daraja.ResponseCode
 
   @spec from_map(map()) :: Success.t() | Error.t()
   def from_map(%{"CheckoutRequestID" => _} = map) do

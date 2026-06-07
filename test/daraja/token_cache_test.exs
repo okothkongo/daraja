@@ -287,6 +287,97 @@ defmodule Daraja.TokenCacheTest do
     assert msg2 =~ "refresh_before (60) must be less than ttl (60)"
   end
 
+  test "shares one in-flight fetch for concurrent callers on the same key", %{client: client} do
+    name = unique_name()
+    start_cache!(name: name)
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok-shared","expires_in":"3600"})})
+
+    tasks = [
+      Task.async(fn -> TokenCache.get_token(client, name) end),
+      Task.async(fn -> TokenCache.get_token(client, name) end)
+    ]
+
+    assert [{:ok, "tok-shared"}, {:ok, "tok-shared"}] = Task.await_many(tasks, 5_000)
+    assert {:error, :no_response_queued} = Mock.request(:get, "", [], "")
+  end
+
+  test "ignores task results for unknown references", %{client: client} do
+    name = unique_name()
+    start_cache!(name: name)
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok","expires_in":"3600"})})
+    assert {:ok, "tok"} = TokenCache.get_token(client, name)
+
+    send(GenServer.whereis(name), {make_ref(), :ignored})
+    assert {:ok, "tok"} = TokenCache.get_token(client, name)
+    assert {:error, :no_response_queued} = Mock.request(:get, "", [], "")
+  end
+
+  test "ignores DOWN for in-flight refresh with no waiters", %{client: client} do
+    name = unique_name()
+    start_cache!(name: name)
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok","expires_in":"3600"})})
+    assert {:ok, "tok"} = TokenCache.get_token(client, name)
+
+    key = cache_key(client)
+    ref = make_ref()
+
+    :sys.replace_state(name, fn state ->
+      %{state | in_flight: Map.put(state.in_flight, key, {ref, [], :refresh})}
+    end)
+
+    send(GenServer.whereis(name), {:DOWN, ref, :process, self(), :kill})
+    assert {:ok, "tok"} = TokenCache.get_token(client, name)
+  end
+
+  test "replies with fetch_crashed when an in-flight fetch task dies", %{client: client} do
+    name = unique_name()
+    start_cache!(name: name)
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok","expires_in":"3600"})})
+    assert {:ok, "tok"} = TokenCache.get_token(client, name)
+
+    key = cache_key(client)
+    task_ref = make_ref()
+    from_ref = make_ref()
+    from = {self(), from_ref}
+
+    :sys.replace_state(name, fn state ->
+      %{state | in_flight: Map.put(state.in_flight, key, {task_ref, [from], :fetch})}
+    end)
+
+    send(GenServer.whereis(name), {:DOWN, task_ref, :process, self(), :kill})
+    assert_receive {^from_ref, {:error, :http_error, :fetch_crashed}}
+    assert {:ok, "tok"} = TokenCache.get_token(client, name)
+  end
+
+  test "schedules refresh retry when an in-flight refresh task dies", %{client: client} do
+    name = unique_name()
+    start_cache!(name: name)
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok","expires_in":"3600"})})
+    assert {:ok, "tok"} = TokenCache.get_token(client, name)
+
+    key = cache_key(client)
+    ref = make_ref()
+
+    :sys.replace_state(name, fn state ->
+      %{state | in_flight: Map.put(state.in_flight, key, {ref, [self()], :refresh})}
+    end)
+
+    send(GenServer.whereis(name), {:DOWN, ref, :process, self(), :kill})
+
+    assert %{
+             in_flight: in_flight,
+             timers: %{^key => _retry_timer}
+           } = :sys.get_state(name)
+
+    assert map_size(in_flight) == 0
+    assert {:ok, "tok"} = TokenCache.get_token(client, name)
+  end
+
   test "fetches different credentials concurrently", %{client: client} do
     name = unique_name()
     start_cache!(name: name)

@@ -174,7 +174,7 @@ defmodule Daraja.CallbackURL do
   defp ipv4_private?({0, _, _, _}), do: true
   defp ipv4_private?(_), do: false
 
-  defp ipv6_blocked?({0, 0, 0, 0, 0, 65535, a, b}),
+  defp ipv6_blocked?({0, 0, 0, 0, 0, 65_535, a, b}),
     do: ipv4_private?(ipv4_from_mapped_words(a, b))
 
   defp ipv6_blocked?({0, 0, 0, 0, 0, 0, 0, 1}), do: true

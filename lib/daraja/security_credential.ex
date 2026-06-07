@@ -62,13 +62,11 @@ defmodule Daraja.SecurityCredential do
   def resolve(credential) when is_binary(credential), do: {:ok, credential}
 
   def resolve({password, pem}) when is_binary(password) and is_binary(pem) do
-    cond do
-      tuple_credentials_disabled?() ->
-        {:error, :tuple_credentials_disabled}
-
-      true ->
-        warn_tuple_credential_once()
-        resolve_tuple(password, pem)
+    if tuple_credentials_disabled?() do
+      {:error, :tuple_credentials_disabled}
+    else
+      warn_tuple_credential_once()
+      resolve_tuple(password, pem)
     end
   end
 

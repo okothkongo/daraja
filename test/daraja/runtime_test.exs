@@ -46,4 +46,10 @@ defmodule Daraja.RuntimeTest do
     assert second == Mock
     assert :persistent_term.get({:daraja, :http_client}) == {Mock, Mock}
   end
+
+  test "caches finch pool name in persistent_term" do
+    assert Runtime.finch_pool_name() == Daraja.Finch
+    assert Runtime.finch_pool_name() == Daraja.Finch
+    assert :persistent_term.get({:daraja, :finch_pool}) == {Daraja.Finch, Daraja.Finch}
+  end
 end
