@@ -79,7 +79,7 @@ defmodule Daraja.MixProject do
       source_ref: "v#{@version}",
       canonical: "http://hexdocs.pm/daraja",
       source_url: @source_url,
-      extras: ["README.md", "LICENSE"]
+      extras: ["README.md", "LICENSE", "CHANGELOG.md"]
     ]
   end
 
