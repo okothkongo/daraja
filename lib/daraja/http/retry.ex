@@ -12,7 +12,7 @@ defmodule Daraja.HTTP.Retry do
         max_ms: 2_000,
         jitter: true
 
-  `Daraja.Auth.fetch_token_info/2` respects this config. Payment POST endpoints
+  `Daraja.Auth.fetch_token/1` respects this config. Payment POST endpoints
   do **not** retry automatically — wrap your own calls with `run/2` when you
   have explicit idempotency guarantees.
   """
