@@ -355,6 +355,31 @@ defmodule Daraja.TokenCacheTest do
     assert {:ok, "tok"} = TokenCache.get_token(client, name)
   end
 
+  test "schedules refresh retry when refresh task returns an error", %{client: client} do
+    name = unique_name()
+    start_cache!(name: name)
+
+    Mock.push_response({:ok, 200, [], ~s({"access_token":"tok","expires_in":"3600"})})
+    assert {:ok, "tok"} = TokenCache.get_token(client, name)
+
+    key = cache_key(client)
+    ref = make_ref()
+
+    :sys.replace_state(name, fn state ->
+      %{state | in_flight: Map.put(state.in_flight, key, {ref, [], :refresh})}
+    end)
+
+    send(GenServer.whereis(name), {ref, {:error, :auth_failed, :unauthorized}})
+
+    assert %{
+             in_flight: in_flight,
+             timers: %{^key => _retry_timer}
+           } = :sys.get_state(name)
+
+    assert map_size(in_flight) == 0
+    assert [{^key, {"tok", _expires_at, _ttl}}] = :ets.lookup(name, key)
+  end
+
   test "schedules refresh retry when an in-flight refresh task dies", %{client: client} do
     name = unique_name()
     start_cache!(name: name)
