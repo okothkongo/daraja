@@ -5,7 +5,7 @@
 
 Elixir client for the [Safaricom Daraja API](https://developer.safaricom.co.ke).
 
-Daraja is a programmatic API client for M-Pesa — not an IEx helper library. Every
+Daraja is a programmatic API client for M-Pesa.Every
 call takes a `Daraja.Client` as its first argument, returns typed `{:ok, _}` /
 `{:error, reason, _}` tuples, and works against both sandbox and production
 environments. Build a client once, reuse it across Express, C2B, B2B, and B2C
@@ -356,10 +356,7 @@ config :daraja, :msisdn_regex, ~r/^254\d{9}$/
 ```
 
 ## Documentation
-
-- **Module docs:** run `mix docs` and open `doc/index.html`
-- **In IEx:** `h Daraja`, `h Daraja.Express`, etc.
-- **Online (after Hex publish):** [https://hexdocs.pm/daraja](https://hexdocs.pm/daraja)
+[https://hexdocs.pm/daraja](https://hexdocs.pm/daraja)
 
 ## Development
 
