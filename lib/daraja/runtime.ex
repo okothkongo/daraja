@@ -117,7 +117,7 @@ defmodule Daraja.Runtime do
 
       client == Daraja.HTTPClient.Finch and not ensure_loaded.(Finch) ->
         raise """
-        Daraja.HTTPClient.Finch is not available. Add {:finch, "~> 0.18"} to \
+        Daraja.HTTPClient.Finch is not available. Add {:finch, "~> 0.23"} to \
         your application's dependencies, or configure a custom HTTP client:
 
             config :daraja, :http_client, MyApp.CustomHTTPClient

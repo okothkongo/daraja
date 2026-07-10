@@ -223,18 +223,18 @@ Add `:daraja` and `:finch` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:daraja, git: "https://github.com/okothkongo/daraja.git"},
-    {:finch, "~> 0.18"}
+    {:daraja, "~> 0.1.0"}
+   #You replace this with client of your choice
+    {:finch, "~> 0.23"}
   ]
 end
 ```
 
-When published to Hex, `{:daraja, "~> 0.1.0"}` will replace the git dependency.
 
 `:finch` is optional in Daraja's own `mix.exs` but required for the default
-HTTP adapter. CI tests the Finch adapter against **0.18.0** (minimum) and the
-latest release matching `~> 0.18` so Mint/TLS stack changes are caught early.
-Use `{:finch, "~> 0.18"}` in your app unless you provide a custom
+HTTP adapter. CI tests the Finch adapter against **0.23** (minimum) and the
+latest release matching `~> 0.23` so Mint/TLS stack changes are caught early.
+Use `{:finch, "~> 0.23"}` in your app unless you provide a custom
 `Daraja.HTTPClient`.
 
 Start a Finch pool and optionally enable token caching in your application's
@@ -327,7 +327,7 @@ Implement the `Daraja.HTTPClient` behaviour and configure it:
 config :daraja, :http_client, MyApp.CustomHTTPClient
 ```
 
-**Note:** If you configure a custom HTTP client, you can remove `{:finch, "~> 0.18"}`
+**Note:** If you configure a custom HTTP client, you can remove `{:finch, "~> 0.23"}`
 from your `mix.exs` and drop the Finch pool from your supervision tree. Finch is an
 optional dependency; leaving the default `Daraja.HTTPClient.Finch` configured while
 omitting Finch from deps will raise at runtime with a clear message.

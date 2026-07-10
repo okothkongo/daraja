@@ -6,9 +6,9 @@ defmodule Daraja.HTTPClient do
   or rely on the default `Daraja.HTTPClient.Finch` implementation.
 
   The default implementation is `Daraja.HTTPClient.Finch`, which requires
-  `{:finch, "~> 0.18"}` in your `mix.exs` and a Finch pool (default name
+  `{:finch, "~> 0.23"}` in your `mix.exs` and a Finch pool (default name
   `Daraja.Finch`) started in your supervision tree. CI verifies compatibility
-  from Finch 0.18.0 through the latest `~> 0.18` release. If you configure a
+  from Finch 0.23.0 through the latest `~> 0.23` release. If you configure a
   custom client, both requirements can be dropped.
 
   Configure the adapter in your application:

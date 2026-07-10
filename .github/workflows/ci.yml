@@ -64,7 +64,7 @@ jobs:
       - name: Resolve Finch version
         run: |
           if [ "${{ matrix.finch }}" = "minimum" ]; then
-            sed -i 's/{:finch, "~> 0.18", optional: true}/{:finch, "0.18.0", optional: true}/' mix.exs
+            sed -i 's/{:finch, "~> 0.23", optional: true}/{:finch, "0.23.0", optional: true}/' mix.exs
           fi
           mix deps.get --only test
           if [ "${{ matrix.finch }}" = "latest" ]; then
