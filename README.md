@@ -223,7 +223,7 @@ Add `:daraja` and `:finch` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:daraja, "~> 0.1.0"}
+    {:daraja, "~> 0.1.1"}
    #You replace this with client of your choice
     {:finch, "~> 0.23"}
   ]
