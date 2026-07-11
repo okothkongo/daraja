@@ -1,6 +1,6 @@
 defmodule Daraja.MixProject do
   use Mix.Project
-  @version "0.1.0"
+  @version "0.1.1"
   @daraja_link "https://developer.safaricom.co.ke"
   @source_url "https://github.com/okothkongo/daraja"
   def project do
