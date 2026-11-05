@@ -1,6 +1,6 @@
 defmodule Daraja.MixProject do
   use Mix.Project
-  @version "0.1.1"
+  @version "0.1.2"
   @daraja_link "https://developer.safaricom.co.ke"
   @source_url "https://github.com/okothkongo/daraja"
   def project do
@@ -59,16 +59,16 @@ defmodule Daraja.MixProject do
   end
 
   defp description do
-    "Safaricom Daraja API library
-    #{@daraja_link}
-    "
+    "Elixir Mpesa (M-Pesa) library for the Safaricom Daraja API: STK Push " <>
+      "(Lipa na Mpesa), C2B, B2B and B2C payments, with OAuth token caching " <>
+      "and callback parsing."
   end
 
   defp package() do
     [
       maintainers: ["Okoth Kongo"],
       licenses: ["Apache-2.0"],
-      links: %{"GitHub" => @source_url}
+      links: %{"GitHub" => @source_url, "Safaricom Daraja API" => @daraja_link}
     ]
   end
 
@@ -79,9 +79,16 @@ defmodule Daraja.MixProject do
       source_ref: "v#{@version}",
       canonical: "http://hexdocs.pm/daraja",
       source_url: @source_url,
-      extras: ["README.md", "LICENSE", "CHANGELOG.md"]
+      extras: ["README.md", "LICENSE", "CHANGELOG.md"],
+      before_closing_head_tag: &before_closing_head_tag/1
     ]
   end
+
+  defp before_closing_head_tag(:html) do
+    ~s(<meta name="description" content="#{description()}">)
+  end
+
+  defp before_closing_head_tag(_format), do: ""
 
   defp aliases do
     [

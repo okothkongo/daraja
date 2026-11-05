@@ -1,6 +1,6 @@
 defmodule Daraja do
   @moduledoc """
-  Elixir client for the Safaricom Daraja API.
+  Elixir Mpesa (M-Pesa) client for the Safaricom Daraja API.
 
   All API calls take a `Daraja.Client` as their first argument. Build a client
   once and reuse it; per-request options on `Daraja.Client.new/1` override
