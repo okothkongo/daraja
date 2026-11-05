@@ -1,11 +1,13 @@
-# Daraja
+# Daraja: Elixir Mpesa (M-Pesa) Library
 
 [![Elixir CI](https://github.com/okothkongo/daraja/actions/workflows/ci.yml/badge.svg)](https://github.com/okothkongo/daraja/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-Elixir client for the [Safaricom Daraja API](https://developer.safaricom.co.ke).
+Elixir library for Mpesa payments through the
+[Safaricom Daraja API](https://developer.safaricom.co.ke): STK Push (Lipa na
+Mpesa / M-Pesa Express), C2B, B2B, and B2C.
 
-Daraja is a programmatic API client for M-Pesa.Every
+Daraja is a programmatic API client for M-Pesa. Every
 call takes a `Daraja.Client` as its first argument, returns typed `{:ok, _}` /
 `{:error, reason, _}` tuples, and works against both sandbox and production
 environments. Build a client once, reuse it across Express, C2B, B2B, and B2C
@@ -223,7 +225,7 @@ Add `:daraja` and `:finch` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:daraja, "~> 0.1.1"}
+    {:daraja, "~> 0.1.2"},
    #You replace this with client of your choice
     {:finch, "~> 0.23"}
   ]

@@ -1,5 +1,8 @@
 # Changelog
 
+## v0.1.2
+Improve package metadata and docs so the library can be found by searching for Mpesa, M-Pesa and Daraja
+
 ## v0.1.1
 Update docs to reflect the finch version 0.23
 
